@@ -33,8 +33,6 @@
                 android:gravity="center_vertical"
                 android:textSize="20dp"
                 android:paddingLeft="17dp"
-                android:paddingStart="17dp"
-                android:paddingEnd="17dp"
                 android:background="@drawable/launch_button_states"/>
 
             <FrameLayout
@@ -50,8 +48,6 @@
                 android:gravity="center_vertical"
                 android:textSize="20dp"
                 android:paddingLeft="17dp"
-                android:paddingStart="17dp"
-                android:paddingEnd="17dp"
                 android:background="@drawable/launch_button_states"/>
 
             <FrameLayout
@@ -67,8 +63,6 @@
                 android:gravity="center_vertical"
                 android:textSize="20dp"
                 android:paddingLeft="17dp"
-                android:paddingStart="17dp"
-                android:paddingEnd="17dp"
                 android:background="@drawable/launch_button_states"/>
 
         </LinearLayout>
@@ -89,8 +83,6 @@
                 android:gravity="center_vertical"
                 android:textSize="20dp"
                 android:paddingLeft="17dp"
-                android:paddingStart="17dp"
-                android:paddingEnd="17dp"
                 android:background="@drawable/launch_button_states"/>
 
             <FrameLayout
@@ -106,8 +98,6 @@
                 android:gravity="center_vertical"
                 android:textSize="20dp"
                 android:paddingLeft="17dp"
-                android:paddingStart="17dp"
-                android:paddingEnd="17dp"
                 android:background="@drawable/launch_button_states"/>
 
         </LinearLayout>
