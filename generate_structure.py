@@ -2,10 +2,11 @@ import os
 import json
 from collections import Counter
 
-# Все расширения, фильтруются только папки
+INCLUDE_EXTENSIONS = {'.java'}
 EXCLUDE_PATHS = {
     os.path.normpath("TMessagesProj/.cxx"),
     os.path.normpath("TMessagesProj/src/main/res"),
+    os.path.normpath("TMessagesProj/src/main/assests"),
     os.path.normpath("TMessagesProj/jni"),
     os.path.normpath("TMessagesProj_AppHockeyApp"),
     os.path.normpath("TMessagesProj_AppHuawei"),
@@ -19,13 +20,15 @@ SUMMARY = {
     "max_depth": 0,
 }
 
-def is_excluded(path):
+def is_excluded(rel_path):
+    rel_path_norm = rel_path.replace("\\", "/")
     for exclude in EXCLUDE_PATHS:
-        if path.startswith(exclude):
+        exclude_norm = exclude.replace("\\", "/")
+        if rel_path_norm == exclude_norm or rel_path_norm.startswith(exclude_norm + "/"):
             return True
     return False
 
-def build_filtered_tree(root_path, max_depth=6):
+def build_filtered_tree(root_path, max_depth=8):
     tree = {}
 
     def add_to_tree(path, current_dict, depth):
@@ -50,10 +53,11 @@ def build_filtered_tree(root_path, max_depth=6):
 
         for file in files:
             ext = os.path.splitext(file)[1]
-            rel_file_path = os.path.join(rel_root, file).replace("\\", "/")
-            add_to_tree(rel_file_path, tree, depth)
-            SUMMARY["total_files"] += 1
-            SUMMARY["by_extension"][ext] += 1
+            if ext in INCLUDE_EXTENSIONS:
+                rel_file_path = os.path.join(rel_root, file).replace("\\", "/")
+                add_to_tree(rel_file_path, tree, depth)
+                SUMMARY["total_files"] += 1
+                SUMMARY["by_extension"][ext] += 1
 
     return tree
 
@@ -70,7 +74,7 @@ if __name__ == "__main__":
         }
     }
 
-    with open("java_structure.json", "w", encoding="utf-8") as f:
+    with open("java_only.json", "w", encoding="utf-8") as f:
         json.dump(output_data, f, indent=2, ensure_ascii=False)
 
-    print("✅ Структура по всем файлам сохранена в 'all_files.json'")
+    print("✅ Структура только по .java сохранена в 'java_only.json'")
