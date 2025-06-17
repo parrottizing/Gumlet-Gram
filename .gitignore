@@ -13,3 +13,6 @@ TMessagesProj_App/afat/
 TMessagesProj_AppHockeyApp/afat/
 TMessagesProj_AppStandalone/afat/
 TMessagesProj_AppHuawei/afat/
+
+# Ignore BuildVars.java to prevent committing sensitive API keys
+TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java
