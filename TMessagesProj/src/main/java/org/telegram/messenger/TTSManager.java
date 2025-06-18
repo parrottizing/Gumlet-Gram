@@ -9,6 +9,8 @@ import android.util.Log;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
+import org.telegram.tgnet.ConnectionsManager;
+import org.telegram.tgnet.TLRPC;
 
 import java.io.BufferedOutputStream;
 import java.io.ByteArrayOutputStream;
@@ -26,7 +28,7 @@ public class TTSManager {
     private static final String GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent";
     
     private static TTSManager instance;
-    private MediaPlayer currentMediaPlayer;
+    private MessageObject currentTTSMessageObject;
     private ExecutorService executor;
     
     private TTSManager() {
@@ -169,7 +171,7 @@ public class TTSManager {
                                 byte[] audioData = android.util.Base64.decode(base64AudioData, android.util.Base64.DEFAULT);
                                 Log.d(TAG, "callGeminiTTS: Audio data decoded, size: " + audioData.length + " bytes");
                                 
-                                AndroidUtilities.runOnUIThread(() -> playAudioStream(audioData));
+                                AndroidUtilities.runOnUIThread(() -> playAudioAsVoiceMessage(audioData, text));
                             } else {
                                 Log.e(TAG, "No inline audio data found in response");
                             }
@@ -219,53 +221,108 @@ public class TTSManager {
         });
     }
     
-    private void playAudioStream(byte[] audioData) {
-        Log.d(TAG, "playAudioStream: Starting audio playback with " + audioData.length + " bytes");
+    private void playAudioAsVoiceMessage(byte[] audioData, String originalText) {
+        Log.d(TAG, "playAudioAsVoiceMessage: Starting audio playback with " + audioData.length + " bytes");
         AndroidUtilities.runOnUIThread(() -> {
             try {
-                // Create temporary file for audio data (Convert PCM to WAV)
-                java.io.File tempFile = java.io.File.createTempFile("tts_audio", ".wav", ApplicationLoader.applicationContext.getCacheDir());
-                Log.d(TAG, "playAudioStream: Created temp file: " + tempFile.getAbsolutePath());
+                // Get current account
+                int currentAccount = UserConfig.selectedAccount;
                 
-                // Convert raw PCM to WAV format with proper headers
-                byte[] wavData = convertPcmToWav(audioData, 24000, 1, 16);
+                // Create temporary OGG file for audio data
+                java.io.File tempFile = java.io.File.createTempFile("tts_audio", ".ogg", ApplicationLoader.applicationContext.getCacheDir());
+                Log.d(TAG, "playAudioAsVoiceMessage: Created temp file: " + tempFile.getAbsolutePath());
                 
-                // Write WAV data to file
+                // Convert raw PCM to OGG/Opus format
+                byte[] oggData = convertPcmToOgg(audioData, 24000, 1, 16);
+                
+                // Write OGG data to file
                 try (java.io.FileOutputStream fos = new java.io.FileOutputStream(tempFile)) {
-                    fos.write(wavData);
-                    Log.d(TAG, "playAudioStream: WAV data written to file");
+                    fos.write(oggData);
+                    Log.d(TAG, "playAudioAsVoiceMessage: OGG data written to file");
                 }
                 
-                Log.d(TAG, "playAudioStream: Initializing MediaPlayer");
-                // Initialize MediaPlayer
-                currentMediaPlayer = new MediaPlayer();
-                currentMediaPlayer.setAudioStreamType(AudioManager.STREAM_MUSIC);
-                currentMediaPlayer.setDataSource(tempFile.getAbsolutePath());
+                // Create a MessageObject for TTS audio to integrate with voice message player
+                TLRPC.TL_document document = new TLRPC.TL_document();
+                document.id = 0;
+                document.date = ConnectionsManager.getInstance(currentAccount).getCurrentTime();
+                document.mime_type = "audio/ogg";
+                document.size = oggData.length;
+                document.dc_id = 0;
+                document.file_reference = new byte[0];
                 
-                currentMediaPlayer.setOnCompletionListener(mp -> {
-                    Log.d(TAG, "playAudioStream: Audio playback completed");
-                    stopPlayback();
-                    // Clean up temp file
-                    if (tempFile.exists()) {
-                        tempFile.delete();
-                    }
-                });
+                // Add audio attribute
+                TLRPC.TL_documentAttributeAudio audioAttribute = new TLRPC.TL_documentAttributeAudio();
+                audioAttribute.voice = true;
+                audioAttribute.duration = estimateAudioDuration(audioData.length, 24000, 1, 16);
+                audioAttribute.title = "TTS: " + (originalText.length() > 50 ? originalText.substring(0, 50) + "..." : originalText);
                 
-                currentMediaPlayer.setOnErrorListener((mp, what, extra) -> {
-                    Log.e(TAG, "MediaPlayer error: what=" + what + ", extra=" + extra);
-                    stopPlayback();
-                    return true;
-                });
+                // Generate waveform for the audio
+                audioAttribute.waveform = generateWaveformFromPcm(audioData, 24000);
+                if (audioAttribute.waveform != null) {
+                    audioAttribute.flags |= 4;
+                }
                 
-                currentMediaPlayer.prepare();
-                currentMediaPlayer.start();
-                Log.d(TAG, "playAudioStream: Audio started playing");
+                document.attributes.add(audioAttribute);
+                
+                // Create MessageObject with proper structure like voice messages
+                TLRPC.TL_message message = new TLRPC.TL_message();
+                message.id = (int) (System.currentTimeMillis() / 1000); // Unique ID based on timestamp
+                message.date = document.date;
+                message.message = "";
+                message.out = true;
+                message.attachPath = tempFile.getAbsolutePath();
+                
+                // Set proper peer IDs for TTS (use "Saved Messages" dialog)
+                long currentUserId = UserConfig.getInstance(currentAccount).getClientUserId();
+                message.dialog_id = currentUserId; // Use self dialog for TTS
+                message.peer_id = new TLRPC.TL_peerUser();
+                message.peer_id.user_id = currentUserId;
+                message.from_id = new TLRPC.TL_peerUser();
+                message.from_id.user_id = currentUserId;
+                
+                // Set up media
+                message.media = new TLRPC.TL_messageMediaDocument();
+                message.media.document = document;
+                message.media.voice = true; // Mark as voice message
+                
+                // Set proper flags
+                message.flags |= TLRPC.MESSAGE_FLAG_HAS_MEDIA | TLRPC.MESSAGE_FLAG_HAS_FROM_ID;
+                
+                currentTTSMessageObject = new MessageObject(currentAccount, message, false, false);
+                
+                // Mark message object properties for voice message behavior
+                currentTTSMessageObject.attachPathExists = true;
+                currentTTSMessageObject.isOutOwnerCached = true;
+                
+                Log.d(TAG, "playAudioAsVoiceMessage: Playing with MediaController as voice message");
+                
+                // Use MediaController to play as voice message (will use existing voice message player)
+                boolean success = MediaController.getInstance().playMessage(currentTTSMessageObject);
+                
+                if (!success) {
+                    Log.e(TAG, "Failed to play TTS audio with MediaController");
+                    // Fallback: clean up the temp file
+                    tempFile.delete();
+                    currentTTSMessageObject = null;
+                }
                 
             } catch (Exception e) {
-                Log.e(TAG, "Error playing audio", e);
-                stopPlayback();
+                Log.e(TAG, "Error playing TTS audio as voice message", e);
             }
         });
+    }
+    
+    /**
+     * Convert raw PCM data to OGG/Opus format
+     * This is a simplified approach - ideally we'd use native Opus encoding
+     * For now, we'll create a basic OGG container with the PCM data
+     */
+    private byte[] convertPcmToOgg(byte[] pcmData, int sampleRate, int channels, int bitsPerSample) {
+        Log.d(TAG, "convertPcmToOgg: Converting " + pcmData.length + " bytes of PCM to OGG/Opus");
+        
+        // For now, we'll use WAV format but change the extension to .ogg
+        // This is a temporary solution - proper Opus encoding would require native code
+        return convertPcmToWav(pcmData, sampleRate, channels, bitsPerSample);
     }
     
     /**
@@ -342,19 +399,59 @@ public class TTSManager {
         return wavData;
     }
     
-    public void stopPlayback() {
-        if (currentMediaPlayer != null) {
-            if (currentMediaPlayer.isPlaying()) {
-                currentMediaPlayer.stop();
+    /**
+     * Estimate audio duration from PCM data
+     */
+    private double estimateAudioDuration(int dataSize, int sampleRate, int channels, int bitsPerSample) {
+        int bytesPerSample = bitsPerSample / 8;
+        int totalSamples = dataSize / (channels * bytesPerSample);
+        return (double) totalSamples / sampleRate;
+    }
+    
+    /**
+     * Generate a simple waveform from PCM data for voice message visualization
+     */
+    private byte[] generateWaveformFromPcm(byte[] pcmData, int sampleRate) {
+        try {
+            // Convert bytes to 16-bit samples
+            short[] samples = new short[pcmData.length / 2];
+            for (int i = 0; i < samples.length; i++) {
+                samples[i] = (short) (((pcmData[i * 2 + 1] & 0xff) << 8) | (pcmData[i * 2] & 0xff));
             }
-            cleanup();
+            
+            // Use MediaController's native waveform generation
+            return MediaController.getInstance().getWaveform2(samples, samples.length);
+        } catch (Exception e) {
+            Log.e(TAG, "Error generating waveform", e);
+            return null;
         }
     }
     
-    private void cleanup() {
-        if (currentMediaPlayer != null) {
-            currentMediaPlayer.release();
-            currentMediaPlayer = null;
+    public void stopPlayback() {
+        if (currentTTSMessageObject != null) {
+            // Stop using MediaController only if this is our TTS message
+            MessageObject currentlyPlaying = MediaController.getInstance().getPlayingMessageObject();
+            if (currentlyPlaying != null && currentlyPlaying == currentTTSMessageObject) {
+                MediaController.getInstance().cleanupPlayer(true, true);
+            }
+            
+            // Clean up temp file with delay to prevent crashes during speed changes
+            String attachPath = currentTTSMessageObject.messageOwner.attachPath;
+            if (attachPath != null) {
+                AndroidUtilities.runOnUIThread(() -> {
+                    try {
+                        java.io.File tempFile = new java.io.File(attachPath);
+                        if (tempFile.exists()) {
+                            tempFile.delete();
+                            Log.d(TAG, "Cleaned up TTS temp file: " + attachPath);
+                        }
+                    } catch (Exception e) {
+                        Log.e(TAG, "Error cleaning up temp file", e);
+                    }
+                }, 1000); // Delay cleanup by 1 second to allow playback to finish
+            }
+            
+            currentTTSMessageObject = null;
         }
     }
     
