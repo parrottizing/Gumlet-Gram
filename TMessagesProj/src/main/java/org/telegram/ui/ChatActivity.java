@@ -266,6 +266,8 @@ import org.telegram.ui.bots.BotCommandsMenuView;
 import org.telegram.ui.bots.BotWebViewSheet;
 import org.telegram.ui.bots.WebViewRequestProps;
 
+import org.telegram.messenger.TTSManager;
+
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
@@ -1086,6 +1088,7 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
     private final static int OPTION_FACT_CHECK = 106;
     private final static int OPTION_EDIT_PRICE = 107;
     private final static int OPTION_GIFT = 108;
+    private final static int OPTION_READ_ALOUD = 109;
 
     private final static int[] allowedNotificationsDuringChatListAnimations = new int[]{
             NotificationCenter.messagesRead,
@@ -2992,6 +2995,10 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
     @Override
     public void onFragmentDestroy() {
         super.onFragmentDestroy();
+        
+        // Clean up TTS resources
+        TTSManager.getInstance().onDestroy();
+        
         if (chatActivityEnterView != null) {
             chatActivityEnterView.onDestroy();
         }
@@ -29449,6 +29456,11 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
                             options.add(OPTION_COPY_LINK);
                             icons.add(R.drawable.msg_link);
                         }
+                        if (!selectedObject.isSponsored() && chatMode != MODE_SCHEDULED && ChatObject.isChannel(currentChat) && selectedObject.getDialogId() != mergeDialogId) {
+                            items.add(LocaleController.getString(R.string.ReadAloud));
+                            icons.add(R.drawable.msg_voice_speaker);
+                            options.add(OPTION_READ_ALOUD);
+                        }
                         if (selectedObject != null && selectedObject.messageOwner != null && selectedObject.messageOwner.action == null && currentChat != null && currentChat.forum && !isTopic && selectedObject.messageOwner != null && selectedObject.messageOwner.reply_to != null && selectedObject.messageOwner.reply_to.forum_topic) {
                             items.add(LocaleController.getString(R.string.ViewInTopic));
                             options.add(OPTION_VIEW_IN_TOPIC);
@@ -32364,6 +32376,38 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
                     }
 
                 }));
+                break;
+            }
+            case OPTION_READ_ALOUD: {
+                                        android.util.Log.d("ChatActivity", "Read Aloud button clicked");
+                        android.util.Log.d("ChatActivity", "DEBUG: Starting message text extraction...");
+                        
+                        // CRITICAL FIX: Check if selectedObject is null before accessing it
+                        if (selectedObject == null) {
+                            android.util.Log.e("ChatActivity", "ERROR: selectedObject is null - cannot extract text for TTS");
+                            return;
+                        }
+                        android.util.Log.d("ChatActivity", "DEBUG: selectedObject is valid, proceeding...");
+                if (selectedObject != null) {
+                    String messageText = null;
+                    
+                    // Extract text from different message types
+                    if (selectedObject.messageText != null) {
+                        messageText = selectedObject.messageText.toString();
+                    } else if (selectedObject.caption != null) {
+                        messageText = selectedObject.caption.toString();
+                    }
+                    
+                    // Clean the text by removing excessive whitespace
+                    if (!TextUtils.isEmpty(messageText)) {
+                        messageText = messageText.trim();
+                        // Remove excessive whitespace and newlines for better TTS
+                        messageText = messageText.replaceAll("\\s+", " ");
+                        
+                        // Call TTS functionality
+                        TTSManager.getInstance().readAloud(messageText, getContext());
+                    }
+                }
                 break;
             }
             case OPTION_REPORT_CHAT: {
