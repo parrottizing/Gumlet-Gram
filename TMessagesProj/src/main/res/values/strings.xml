@@ -6510,8 +6510,8 @@
     <string name="SortByReactions">Reactions First</string>
     <string name="SortByReposts">Reposts First</string>
     <string name="SortByTime">Newest First</string>
-    <string name="StoryViewsSortDescription">Choose the order for the  list of viewers.</string>
-    <string name="StoryReactionsSortDescription">Choose the order for the  list of reactions.</string>
+    <string name="StoryViewsSortDescription">Choose the order for the list of viewers.</string>
+    <string name="StoryReactionsSortDescription">Choose the order for the list of reactions.</string>
     <string name="NoContactsViewed">None of your contacts viewed this story.</string>
     <string name="Viewers">Viewers</string>
     <string name="StealthModeConfirmTitle">You are in Stealth Mode now</string>
@@ -9118,4 +9118,5 @@
     <string name="VoipAudioSwitchedToHeadset">Audio switched to Headset.</string>
     <string name="VoipAudioSwitchedToPhone">Audio switched to Phone.</string>
     <string name="VoipAudioSwitchedToSpeaker">Audio switched to Speaker.</string>
+    <string name="ReadAloud">Read aloud</string>
 </resources>
