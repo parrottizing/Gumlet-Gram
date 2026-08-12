@@ -117,6 +117,7 @@ import org.telegram.messenger.Emoji;
 import org.telegram.messenger.FileLoader;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.FlagSecureReason;
+import org.telegram.messenger.GroqTranscriptionClient;
 import org.telegram.messenger.ImageLoader;
 import org.telegram.messenger.ImageLocation;
 import org.telegram.messenger.ImageReceiver;
@@ -12634,6 +12635,8 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
             !currentMessageObject.isRepostPreview &&
             (!currentMessageObject.isOutOwner() || currentMessageObject.isSent()) &&
             (
+                GroqTranscriptionClient.isConfigured()
+                ||
                 UserConfig.getInstance(currentAccount).isPremium()
                 ||
                 TranscribeButton.isFreeTranscribeInChat(currentMessageObject)

@@ -1,10 +1,26 @@
 import org.gradle.nativeplatform.platform.internal.DefaultNativePlatform
+import java.util.Properties
 
 apply plugin: 'com.android.library'
 
 repositories {
     mavenCentral()
     google()
+}
+
+def envProps = new Properties()
+def envFile = rootProject.file('.env')
+if (envFile.exists()) {
+    envFile.withInputStream { envProps.load(it) }
+}
+
+def readSecret = { String key, String defaultValue ->
+    def value = System.getenv(key) ?: envProps.getProperty(key)
+    value == null || value.trim().isEmpty() ? defaultValue : value.trim()
+}
+
+def quoted = { String value ->
+    '"' + value.replace('\\', '\\\\').replace('"', '\\"') + '"'
 }
 
 configurations {
@@ -65,6 +81,7 @@ dependencies {
     implementation "io.noties.markwon:html:4.6.2"
     implementation "io.noties.markwon:inline-parser:4.6.2"
     implementation "io.noties.markwon:ext-latex:4.6.2"
+    implementation "com.google.ai.edge.litertlm:litertlm-android:0.16.0"
 
 //    implementation 'com.google.mlkit:translate:17.0.3'
 
@@ -110,7 +127,7 @@ android {
 
 
     defaultConfig {
-        minSdkVersion 21
+        minSdkVersion 24
         targetSdkVersion 35
 
         vectorDrawables.generatedDensities = ['mdpi', 'hdpi', 'xhdpi', 'xxhdpi']
@@ -123,6 +140,11 @@ android {
                 arguments '-DANDROID_STL=c++_static', '-DANDROID_PLATFORM=android-21' //, '-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON'
             }
         }
+
+        buildConfigField "int", "APP_ID", readSecret('TELEGRAM_APP_ID', '4')
+        buildConfigField "String", "APP_HASH", quoted(readSecret('TELEGRAM_APP_HASH', ''))
+        buildConfigField "String", "GEMINI_API_KEY", quoted(readSecret('GEMINI_API_KEY', ''))
+        buildConfigField "String", "GROQ_API_KEY", quoted(readSecret('GROQ_API_KEY', ''))
     }
 
     buildTypes {
