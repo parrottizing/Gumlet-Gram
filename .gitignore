@@ -4,6 +4,7 @@ build/
 obj/
 *.iml
 local.properties
+/.env
 TMessagesProj/.cxx/
 TMessagesProj/jniLibs/
 TMessagesProj/jniRes/

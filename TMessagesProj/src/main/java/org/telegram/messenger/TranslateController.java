@@ -137,10 +137,11 @@ public class TranslateController extends BaseController {
     }
 
     public static boolean isSummarizable(MessageObject messageObject) {
+        final boolean gumletChannelPost = isGumletChannelPost(messageObject);
         return (
             messageObject != null &&
             messageObject.messageOwner != null &&
-            messageObject.messageOwner.summary_from_language != null &&
+            (messageObject.messageOwner.summary_from_language != null || gumletChannelPost) &&
             !messageObject.isOutOwner() &&
             !messageObject.isRestrictedMessage &&
             !messageObject.isSponsored() &&
@@ -155,9 +156,15 @@ public class TranslateController extends BaseController {
                 messageObject.type == MessageObject.TYPE_POLL
             ) && (
                 !TextUtils.isEmpty(messageObject.messageOwner.message) &&
-                messageObject.messageOwner.message.length() > 100
+                (gumletChannelPost ? SummaryPolicy.shouldSummarize(messageObject.messageOwner.message) : messageObject.messageOwner.message.length() > 100)
             )
         );
+    }
+
+    private static boolean isGumletChannelPost(MessageObject messageObject) {
+        return messageObject != null && messageObject.messageOwner != null &&
+                messageObject.messageOwner.peer_id instanceof TLRPC.TL_peerChannel &&
+                messageObject.messageOwner.post;
     }
 
     public static boolean isTranslatable(MessageObject messageObject) {
@@ -580,6 +587,19 @@ public class TranslateController extends BaseController {
 
         final long dialogId = messageObject.getDialogId();
 
+        if (onScreen && isGumletChannelPost(messageObject) && isSummarizable(messageObject) &&
+                messageObject.messageOwner.summaryText == null && !messageObject.messageOwner.summarizedOpen) {
+            messageObject.messageOwner.summarizedOpen = true;
+            if (SummaryPolicy.isAdvertisement(messageObject.messageOwner.message)) {
+                TLRPC.TL_textWithEntities summary = new TLRPC.TL_textWithEntities();
+                summary.text = "Реклама";
+                summary.entities = new ArrayList<>();
+                messageObject.messageOwner.summaryText = summary;
+                messageObject.updateTranslation(true);
+            }
+            getMessagesStorage().updateMessageCustomParams(dialogId, messageObject.messageOwner);
+        }
+
         if (onScreen && messageObject.messageOwner.summarizedOpen && messageObject.messageOwner.summaryText == null && !isTranslatingDialog(messageObject.getDialogId())) {
             final MessageObject finalMessageObject = messageObject;
             pushToSummarize(finalMessageObject, null, (text) -> {
@@ -978,6 +998,21 @@ public class TranslateController extends BaseController {
         if (loadingSummarizations.contains(id)) return;
 
         loadingSummarizations.add(id);
+
+        if (isGumletChannelPost(message) && GemmaSummaryClient.isConfigured()) {
+            GemmaSummaryClient.summarize(message.messageOwner.message, language, summary -> AndroidUtilities.runOnUIThread(() -> {
+                loadingSummarizations.remove(id);
+                if (TextUtils.isEmpty(summary)) {
+                    callback.run(null);
+                    return;
+                }
+                TLRPC.TL_textWithEntities result = new TLRPC.TL_textWithEntities();
+                result.text = summary;
+                result.entities = new ArrayList<>();
+                callback.run(result);
+            }));
+            return;
+        }
 
         final TLRPC.TL_messages_summarizeText req = new TLRPC.TL_messages_summarizeText();
         req.peer = MessagesController.getInstance(currentAccount).getInputPeer(message.getDialogId());
