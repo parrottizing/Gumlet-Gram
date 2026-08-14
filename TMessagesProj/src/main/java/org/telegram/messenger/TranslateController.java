@@ -161,10 +161,16 @@ public class TranslateController extends BaseController {
         );
     }
 
-    private static boolean isGumletChannelPost(MessageObject messageObject) {
+    public static boolean isGumletChannelPost(MessageObject messageObject) {
         return messageObject != null && messageObject.messageOwner != null &&
                 messageObject.messageOwner.peer_id instanceof TLRPC.TL_peerChannel &&
                 messageObject.messageOwner.post;
+    }
+
+    public static boolean isVoiceTranscriptionSummarizable(MessageObject messageObject) {
+        return messageObject != null && messageObject.messageOwner != null &&
+                messageObject.isVoice() && messageObject.messageOwner.voiceTranscriptionFinal &&
+                SummaryPolicy.shouldSummarize(messageObject.messageOwner.voiceTranscription);
     }
 
     public static boolean isTranslatable(MessageObject messageObject) {
@@ -587,7 +593,8 @@ public class TranslateController extends BaseController {
 
         final long dialogId = messageObject.getDialogId();
 
-        if (onScreen && isGumletChannelPost(messageObject) && isSummarizable(messageObject) &&
+        final boolean autoSummarize = isGumletChannelPost(messageObject) && isSummarizable(messageObject);
+        if (autoSummarize &&
                 messageObject.messageOwner.summaryText == null && !messageObject.messageOwner.summarizedOpen) {
             messageObject.messageOwner.summarizedOpen = true;
             if (SummaryPolicy.isAdvertisement(messageObject.messageOwner.message)) {
@@ -595,12 +602,12 @@ public class TranslateController extends BaseController {
                 summary.text = "Реклама";
                 summary.entities = new ArrayList<>();
                 messageObject.messageOwner.summaryText = summary;
-                messageObject.updateTranslation(true);
             }
+            messageObject.updateTranslation(true);
             getMessagesStorage().updateMessageCustomParams(dialogId, messageObject.messageOwner);
         }
 
-        if (onScreen && messageObject.messageOwner.summarizedOpen && messageObject.messageOwner.summaryText == null && !isTranslatingDialog(messageObject.getDialogId())) {
+        if ((onScreen || autoSummarize) && messageObject.messageOwner.summarizedOpen && messageObject.messageOwner.summaryText == null && !isTranslatingDialog(messageObject.getDialogId())) {
             final MessageObject finalMessageObject = messageObject;
             pushToSummarize(finalMessageObject, null, (text) -> {
                 finalMessageObject.messageOwner.summaryText = text;
@@ -608,6 +615,7 @@ public class TranslateController extends BaseController {
                     finalMessageObject.messageOwner.summarizedOpen = false;
                 }
 
+                finalMessageObject.updateTranslation(true);
                 getMessagesStorage().updateMessageCustomParams(dialogId, finalMessageObject.messageOwner);
                 NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.messageTranslated, finalMessageObject, true);
             });
@@ -988,6 +996,42 @@ public class TranslateController extends BaseController {
     private final HashMap<Long, ArrayList<PendingTranslation>> pendingTranscriptionsTranslations = new HashMap<>();
 
     private final HashSet<Integer> loadingSummarizations = new HashSet<>();
+
+    public void summarizeVoiceTranscription(MessageObject message, Runnable callback) {
+        if (!isVoiceTranscriptionSummarizable(message)) {
+            AndroidUtilities.runOnUIThread(callback);
+            return;
+        }
+
+        message.messageOwner.summarizedOpen = true;
+        if (SummaryPolicy.isAdvertisement(message.messageOwner.voiceTranscription)) {
+            TLRPC.TL_textWithEntities result = new TLRPC.TL_textWithEntities();
+            result.text = "Реклама";
+            result.entities = new ArrayList<>();
+            message.messageOwner.summaryText = result;
+            getMessagesStorage().updateMessageCustomParams(message.getDialogId(), message.messageOwner);
+            AndroidUtilities.runOnUIThread(callback);
+            return;
+        }
+        if (!LocalGemmaSummaryClient.isAvailable()) {
+            message.messageOwner.summarizedOpen = false;
+            AndroidUtilities.runOnUIThread(callback);
+            return;
+        }
+        getMessagesStorage().updateMessageCustomParams(message.getDialogId(), message.messageOwner);
+        LocalGemmaSummaryClient.summarize(message.messageOwner.voiceTranscription, null, summary -> AndroidUtilities.runOnUIThread(() -> {
+            if (!TextUtils.isEmpty(summary)) {
+                TLRPC.TL_textWithEntities result = new TLRPC.TL_textWithEntities();
+                result.text = summary;
+                result.entities = new ArrayList<>();
+                message.messageOwner.summaryText = result;
+            } else {
+                message.messageOwner.summarizedOpen = false;
+            }
+            getMessagesStorage().updateMessageCustomParams(message.getDialogId(), message.messageOwner);
+            callback.run();
+        }));
+    }
 
     private void pushToSummarize(
         MessageObject message,

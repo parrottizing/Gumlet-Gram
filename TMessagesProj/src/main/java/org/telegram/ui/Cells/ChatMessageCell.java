@@ -308,6 +308,13 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
         return currentMessageObject;
     }
 
+    public MessageObject getSummaryMessageObject() {
+        if (currentMessagesGroup != null && currentMessagesGroup.captionMessage != null) {
+            return currentMessagesGroup.captionMessage;
+        }
+        return getPrimaryMessageObject();
+    }
+
     @Override
     public void didReceivedNotification(int id, int account, Object... args) {
         if (id == NotificationCenter.startSpoilers) {
@@ -6957,7 +6964,9 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                     drawSideButton = 2;
                 }
             }
-            drawSummarizeButton = TranslateController.isSummarizable(messageObject);
+            MessageObject summaryMessage = getSummaryMessageObject();
+            drawSummarizeButton = summaryMessage != null && (TranslateController.isSummarizable(summaryMessage) ||
+                    TranslateController.isVoiceTranscriptionSummarizable(summaryMessage) && summaryMessage.messageOwner.summaryText != null);
             hasReplyQuote = false;
             isReplyQuote = false;
             isReplyTaskOrPollOption = false;
@@ -19621,8 +19630,11 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
             }
         }
 
-        if (messageObject.summarized && (currentPosition == null || currentPosition.minY == 0)) {
-            drawSummaryReply = true;
+        MessageObject summaryMessage = getSummaryMessageObject();
+        boolean summaryShown = summaryMessage != null && (summaryMessage.summarized ||
+                summaryMessage.messageOwner.summarizedOpen && TranslateController.isVoiceTranscriptionSummarizable(summaryMessage) && summaryMessage.messageOwner.summaryText != null);
+        if (summaryShown && (currentPosition == null || currentPosition.minY == 0)) {
+            drawSummaryReply = currentPosition == null || currentPosition.minX == 0;
             if (summaryTitle == null) {
                 summaryTitle = new Text(getString(R.string.SummaryTitle), 14, AndroidUtilities.bold());
                 summarySubtitle = new Text(getString(R.string.SummarySubtitle), 14);
@@ -21578,7 +21590,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
             if (summarizeIcon == null) {
                 summarizeIcon = new SummaryIcon(this);
             }
-            final MessageObject msg = getMessageObject();
+            final MessageObject msg = getSummaryMessageObject();
             final boolean open = msg != null && msg.messageOwner != null && msg.messageOwner.summarizedOpen;
             summarizeIcon.set(open);
             setDrawableBounds(summarizeIcon, summarizeButtonX + dp(16) - summarizeIcon.getIntrinsicWidth() / 2f, summarizeButtonY + dp(16) - summarizeIcon.getIntrinsicHeight() / 2f);

@@ -180,6 +180,7 @@ import org.telegram.messenger.SendMessagesHelper;
 import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.SvgHelper;
 import org.telegram.messenger.Timer;
+import org.telegram.messenger.TTSManager;
 import org.telegram.messenger.TranslateController;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
@@ -1223,6 +1224,7 @@ public class ChatActivity extends BaseFragment implements
     public final static int OPTION_ABOUT_REVENUE_SHARING_ADS = 33;
     public final static int OPTION_REPORT_AD = 34;
     public final static int OPTION_REMOVE_ADS = 35;
+    public final static int OPTION_READ_ALOUD = 36;
     public final static int OPTION_SEND_NOW = 100;
     public final static int OPTION_EDIT_SCHEDULE_TIME = 102;
     public final static int OPTION_SPEED_PROMO = 103;
@@ -3328,6 +3330,7 @@ public class ChatActivity extends BaseFragment implements
     @Override
     public void onFragmentDestroy() {
         super.onFragmentDestroy();
+        TTSManager.getInstance().onDestroy();
         if (messageMetricsView != null) {
             messageMetricsView.finish();
         }
@@ -33758,6 +33761,16 @@ public class ChatActivity extends BaseFragment implements
                 }));
                 break;
             }
+            case OPTION_READ_ALOUD: {
+                if (selectedObject == null) {
+                    break;
+                }
+                CharSequence text = selectedObject.messageText != null ? selectedObject.messageText : selectedObject.caption;
+                if (!TextUtils.isEmpty(text)) {
+                    TTSManager.getInstance().readAloud(text.toString().trim().replaceAll("\\s+", " "), getContext());
+                }
+                break;
+            }
             case OPTION_REPORT_CHAT: {
                 if (UserObject.isReplyUser(currentUser)) {
                     if (selectedObject.messageOwner.fwd_from != null) {
@@ -39261,7 +39274,10 @@ public class ChatActivity extends BaseFragment implements
 
         @Override
         public void didPressSummarize(ChatMessageCell cell, boolean byReply) {
-            final MessageObject msg = cell.getMessageObject();
+            final MessageObject msg = cell.getSummaryMessageObject();
+            if (msg == null) {
+                return;
+            }
             msg.messageOwner.summarizedOpen = !msg.messageOwner.summarizedOpen;
             final boolean opened = msg.messageOwner.summarizedOpen;
             msg.updateTranslation(true);
@@ -45563,6 +45579,11 @@ public class ChatActivity extends BaseFragment implements
                     items.add(LocaleController.getString(R.string.CopyLink));
                     options.add(OPTION_COPY_LINK);
                     icons.add(R.drawable.msg_link);
+                }
+                if (!isEphemeral && !selectedObject.isSponsored() && chatMode != MODE_SCHEDULED && ChatObject.isChannel(currentChat) && (!TextUtils.isEmpty(selectedObject.messageText) || !TextUtils.isEmpty(selectedObject.caption))) {
+                    items.add(LocaleController.getString(R.string.ReadAloud));
+                    options.add(OPTION_READ_ALOUD);
+                    icons.add(R.drawable.msg_voice_speaker);
                 }
                 if (selectedObject != null && selectedObject.messageOwner != null && selectedObject.messageOwner.action == null && currentChat != null && currentChat.forum && !isTopic && selectedObject.messageOwner != null && selectedObject.messageOwner.reply_to != null && selectedObject.messageOwner.reply_to.forum_topic) {
                     items.add(LocaleController.getString(R.string.ViewInTopic));

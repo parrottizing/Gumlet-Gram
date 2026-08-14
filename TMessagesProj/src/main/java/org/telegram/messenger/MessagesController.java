@@ -21818,6 +21818,12 @@ public class MessagesController extends BaseController implements NotificationCe
         if (mode == ChatActivity.MODE_QUICK_REPLIES) {
             QuickRepliesController.getInstance(currentAccount).checkLocalMessages(messages);
         }
+        for (int i = 0; i < messages.size(); i++) {
+            MessageObject message = messages.get(i);
+            if (TranslateController.isGumletChannelPost(message)) {
+                getTranslateController().checkTranslation(message, false);
+            }
+        }
         getNotificationCenter().postNotificationName(NotificationCenter.didReceiveNewMessages, dialogId, messages, scheduled, mode);
 
         if (lastMessage == null || scheduled) {
