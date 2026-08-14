@@ -826,8 +826,11 @@ public class TranscribeButton {
                 transcribeOperationsByDialogPosition.remove((Integer) reqInfoHash(messageObject));
             }
             messageObject.messageOwner.voiceTranscriptionFinal = true;
+            messageObject.messageOwner.summaryText = null;
+            messageObject.messageOwner.summarizedOpen = false;
             MessagesStorage.getInstance(messageObject.currentAccount).updateMessageVoiceTranscription(messageObject.getDialogId(), messageObject.getId(), text, messageObject.messageOwner);
-            AndroidUtilities.runOnUIThread(() -> {
+            messageObject.messageOwner.voiceTranscription = text;
+            MessagesController.getInstance(messageObject.currentAccount).getTranslateController().summarizeVoiceTranscription(finalMessageObject, () -> {
                 NotificationCenter.getInstance(finalMessageObject.currentAccount).postNotificationName(NotificationCenter.voiceTranscriptionUpdate, finalMessageObject, (Long) transcription_id, (String) text, (Boolean) true, (Boolean) true);
             });
             return true;
