@@ -169,7 +169,7 @@ public class TranslateController extends BaseController {
 
     public static boolean isVoiceTranscriptionSummarizable(MessageObject messageObject) {
         return messageObject != null && messageObject.messageOwner != null &&
-                messageObject.isVoice() && messageObject.messageOwner.voiceTranscriptionFinal &&
+                (messageObject.isVoice() || messageObject.isRoundVideo()) && messageObject.messageOwner.voiceTranscriptionFinal &&
                 SummaryPolicy.shouldSummarize(messageObject.messageOwner.voiceTranscription);
     }
 
@@ -583,11 +583,18 @@ public class TranslateController extends BaseController {
     }
 
     public void checkTranslation(MessageObject messageObject, boolean onScreen) {
-        checkTranslation(messageObject, onScreen, false);
+        checkTranslation(messageObject, onScreen, false, null);
     }
 
-    private void checkTranslation(MessageObject messageObject, boolean onScreen, boolean keepReply) {
+    public void checkTranslation(MessageObject messageObject, boolean onScreen, @Nullable Runnable summaryCallback) {
+        checkTranslation(messageObject, onScreen, false, summaryCallback);
+    }
+
+    private void checkTranslation(MessageObject messageObject, boolean onScreen, boolean keepReply, @Nullable Runnable summaryCallback) {
         if (messageObject == null || messageObject.messageOwner == null) {
+            if (summaryCallback != null) {
+                summaryCallback.run();
+            }
             return;
         }
 
@@ -618,7 +625,12 @@ public class TranslateController extends BaseController {
                 finalMessageObject.updateTranslation(true);
                 getMessagesStorage().updateMessageCustomParams(dialogId, finalMessageObject.messageOwner);
                 NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.messageTranslated, finalMessageObject, true);
+                if (summaryCallback != null) {
+                    summaryCallback.run();
+                }
             });
+        } else if (summaryCallback != null) {
+            summaryCallback.run();
         }
 
         if (!isFeatureAvailable(dialogId)) {
@@ -626,7 +638,7 @@ public class TranslateController extends BaseController {
         }
 
         if (!keepReply && messageObject.replyMessageObject != null) {
-            checkTranslation(messageObject.replyMessageObject, onScreen, true);
+            checkTranslation(messageObject.replyMessageObject, onScreen, true, null);
         }
 
         if (!isTranslatable(messageObject)) {
@@ -1043,18 +1055,23 @@ public class TranslateController extends BaseController {
 
         loadingSummarizations.add(id);
 
-        if (isGumletChannelPost(message) && GemmaSummaryClient.isConfigured()) {
-            GemmaSummaryClient.summarize(message.messageOwner.message, language, summary -> AndroidUtilities.runOnUIThread(() -> {
+        if (isGumletChannelPost(message)) {
+            if (!GemmaSummaryClient.isConfigured()) {
                 loadingSummarizations.remove(id);
-                if (TextUtils.isEmpty(summary)) {
-                    callback.run(null);
-                    return;
-                }
-                TLRPC.TL_textWithEntities result = new TLRPC.TL_textWithEntities();
-                result.text = summary;
-                result.entities = new ArrayList<>();
-                callback.run(result);
-            }));
+                callback.run(null);
+            } else {
+                GemmaSummaryClient.summarize(message.messageOwner.message, language, summary -> AndroidUtilities.runOnUIThread(() -> {
+                    loadingSummarizations.remove(id);
+                    if (TextUtils.isEmpty(summary)) {
+                        callback.run(null);
+                        return;
+                    }
+                    TLRPC.TL_textWithEntities result = new TLRPC.TL_textWithEntities();
+                    result.text = summary;
+                    result.entities = new ArrayList<>();
+                    callback.run(result);
+                }));
+            }
             return;
         }
 

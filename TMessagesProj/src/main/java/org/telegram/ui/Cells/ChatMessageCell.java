@@ -19639,8 +19639,9 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                 summaryTitle = new Text(getString(R.string.SummaryTitle), 14, AndroidUtilities.bold());
                 summarySubtitle = new Text(getString(R.string.SummarySubtitle), 14);
             }
-            summaryTitle.multiline(3).setMaxWidth(getMaxNameWidth() - dp(25));
-            summarySubtitle.multiline(3).setMaxWidth(getMaxNameWidth() - dp(25));
+            int summaryWidth = summaryMessage.isRoundVideo() ? backgroundWidth - dp(31) : getMaxNameWidth();
+            summaryTitle.multiline(3).setMaxWidth(summaryWidth - dp(25));
+            summarySubtitle.multiline(3).setMaxWidth(summaryWidth - dp(25));
             namesOffset += dp(8) + summaryTitle.getHeight() + summarySubtitle.getHeight() + dp(6);
         } else {
             drawSummaryReply = false;
@@ -21410,7 +21411,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
     }
 
     public void drawSideButton(Canvas canvas, boolean fromQuickShare) {
-        if (hideSideButtonByQuickShare && !fromQuickShare || drawSideButton == 0) {
+        if (hideSideButtonByQuickShare && !fromQuickShare || drawSideButton == 0 && !drawSummarizeButton) {
             return;
         }
 
@@ -21475,6 +21476,9 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
             sideStartY -= offsetY;
         }
         sideButtonVisible = true;
+        if (drawSideButton == 0) {
+            return;
+        }
         if (drawSideButton == 3) {
             if (!(enterTransitionInProgress && !currentMessageObject.isVoice())) {
                 drawCommentButton(canvas, 1f);

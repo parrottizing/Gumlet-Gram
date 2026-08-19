@@ -3701,16 +3701,6 @@ public class MessageObject {
             return replyUpdated || true;
         } else if (
             messageOwner != null &&
-            messageOwner.summarizedOpen &&
-            TranslateController.isSummarizable(this)
-        ) {
-            translated = false;
-            summarized = false;
-            applyNewText("\u2026");
-            generateCaption();
-            return replyUpdated || true;
-        } else if (
-            messageOwner != null &&
             TranslateController.isTranslatable(this) &&
             translateController.isTranslatingDialog(getDialogId()) &&
             !translateController.isTranslateDialogHidden(getDialogId()) &&
@@ -7497,8 +7487,8 @@ public class MessageObject {
             return ssb;
         }
         CharSequence text;
-        if (messageOwner.summarizedOpen && TranslateController.isVoiceTranscriptionSummarizable(this)) {
-            text = messageOwner.summaryText == null ? "\u2026" : messageOwner.summaryText.text;
+        if (messageOwner.summarizedOpen && messageOwner.summaryText != null && TranslateController.isVoiceTranscriptionSummarizable(this)) {
+            text = messageOwner.summaryText.text;
         } else {
             text = translated && messageOwner.translatedVoiceTranscription != null ? messageOwner.translatedVoiceTranscription.text : messageOwner.voiceTranscription;
         }
