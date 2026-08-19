@@ -37,7 +37,7 @@ public final class GroqTranscriptionClient {
     public static void transcribe(MessageObject message, Callback callback) {
         File file = FileLoader.getInstance(message.currentAccount).getPathToMessage(message.messageOwner);
         if (file.exists()) {
-            upload(file, callback);
+            upload(file, message.isRoundVideo(), callback);
             return;
         }
 
@@ -66,7 +66,7 @@ public final class GroqTranscriptionClient {
                 remove();
                 File downloaded = FileLoader.getInstance(message.currentAccount).getPathToMessage(message.messageOwner);
                 if (downloaded.exists()) {
-                    upload(downloaded, callback);
+                    upload(downloaded, message.isRoundVideo(), callback);
                 } else {
                     finish(callback, null, "Downloaded voice file is unavailable");
                 }
@@ -89,7 +89,7 @@ public final class GroqTranscriptionClient {
                 message.shouldEncryptPhotoOrVideo() ? 2 : 0);
     }
 
-    private static void upload(File file, Callback callback) {
+    private static void upload(File file, boolean roundVideo, Callback callback) {
         EXECUTOR.execute(() -> {
             HttpURLConnection connection = null;
             try {
@@ -107,8 +107,8 @@ public final class GroqTranscriptionClient {
                     field(output, boundary, "model", MODEL);
                     field(output, boundary, "response_format", "json");
                     output.writeBytes("--" + boundary + "\r\n");
-                    output.writeBytes("Content-Disposition: form-data; name=\"file\"; filename=\"voice.ogg\"\r\n");
-                    output.writeBytes("Content-Type: audio/ogg\r\n\r\n");
+                    output.writeBytes("Content-Disposition: form-data; name=\"file\"; filename=\"" + (roundVideo ? "video.mp4" : "voice.ogg") + "\"\r\n");
+                    output.writeBytes("Content-Type: " + (roundVideo ? "video/mp4" : "audio/ogg") + "\r\n\r\n");
                     byte[] buffer = new byte[16 * 1024];
                     int count;
                     while ((count = input.read(buffer)) != -1) {

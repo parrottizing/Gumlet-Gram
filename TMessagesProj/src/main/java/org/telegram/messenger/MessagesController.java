@@ -21818,13 +21818,29 @@ public class MessagesController extends BaseController implements NotificationCe
         if (mode == ChatActivity.MODE_QUICK_REPLIES) {
             QuickRepliesController.getInstance(currentAccount).checkLocalMessages(messages);
         }
-        for (int i = 0; i < messages.size(); i++) {
-            MessageObject message = messages.get(i);
-            if (TranslateController.isGumletChannelPost(message)) {
-                getTranslateController().checkTranslation(message, false);
+        ArrayList<MessageObject> postsToSummarize = new ArrayList<>();
+        for (MessageObject message : messages) {
+            if (TranslateController.isGumletChannelPost(message) && TranslateController.isSummarizable(message) && message.messageOwner.summaryText == null) {
+                postsToSummarize.add(message);
             }
         }
-        getNotificationCenter().postNotificationName(NotificationCenter.didReceiveNewMessages, dialogId, messages, scheduled, mode);
+        if (postsToSummarize.isEmpty()) {
+            getNotificationCenter().postNotificationName(NotificationCenter.didReceiveNewMessages, dialogId, messages, scheduled, mode);
+        } else {
+            int[] remaining = {postsToSummarize.size()};
+            for (MessageObject message : postsToSummarize) {
+                getTranslateController().checkTranslation(message, false, () -> {
+                    if (--remaining[0] == 0) {
+                        for (MessageObject post : postsToSummarize) {
+                            if (post.messageOwner.summaryText == null) {
+                                return;
+                            }
+                        }
+                        getNotificationCenter().postNotificationName(NotificationCenter.didReceiveNewMessages, dialogId, messages, scheduled, mode);
+                    }
+                });
+            }
+        }
 
         if (lastMessage == null || scheduled) {
             return false;
