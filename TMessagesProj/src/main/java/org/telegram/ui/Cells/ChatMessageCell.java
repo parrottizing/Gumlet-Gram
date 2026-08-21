@@ -4091,6 +4091,12 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
         int x = (int) getEventX(event);
         int y = (int) getEventY(event);
 
+        if (sideButtonVisible && drawSummarizeButton &&
+                x >= summarizeButtonX - dp(4) && x <= summarizeButtonX + dp(40) &&
+                y >= summarizeButtonY - dp(4) && y <= summarizeButtonY + dp(40)) {
+            return false;
+        }
+
         boolean result = false;
         if (event.getAction() == MotionEvent.ACTION_DOWN) {
             if (currentMessageObject.type == MessageObject.TYPE_PHONE_CALL) {
@@ -6964,9 +6970,11 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                     drawSideButton = 2;
                 }
             }
-            MessageObject summaryMessage = getSummaryMessageObject();
-            drawSummarizeButton = summaryMessage != null && (TranslateController.isSummarizable(summaryMessage) ||
-                    TranslateController.isVoiceTranscriptionSummarizable(summaryMessage) && summaryMessage.messageOwner.summaryText != null);
+            boolean hadSummarizeButton = drawSummarizeButton;
+            drawSummarizeButton = shouldDrawSummarizeButton();
+            if (hadSummarizeButton != drawSummarizeButton) {
+                invalidateOutbounds();
+            }
             hasReplyQuote = false;
             isReplyQuote = false;
             isReplyTaskOrPollOption = false;
@@ -20851,6 +20859,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
             (!transitionParams.transitionBotButtons.isEmpty() && transitionParams.animateBotButtonsChanged) ||
             !botButtons.isEmpty() ||
             drawSideButton != 0 ||
+            drawSummarizeButton ||
             drawNameLayout && nameLayout != null && currentNameEmojiStatusDrawable != null && !currentNameEmojiStatusDrawable.isEmpty() ||
             animatedEmojiStack != null && !animatedEmojiStack.holders.isEmpty() ||
             currentNameStatusDrawable != null && !currentNameStatusDrawable.isEmpty() ||
@@ -21577,6 +21586,13 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
     }
 
     private SummaryIcon summarizeIcon;
+    private boolean shouldDrawSummarizeButton() {
+        MessageObject summaryMessage = getSummaryMessageObject();
+        boolean isSummaryHost = currentPosition == null || currentPosition.minX == 0 && currentPosition.minY == 0;
+        return isSummaryHost && summaryMessage != null && (TranslateController.isSummarizable(summaryMessage) ||
+                TranslateController.isVoiceTranscriptionSummarizable(summaryMessage));
+    }
+
     public void drawSummarizeButton(Canvas canvas) {
         summarizeButtonX = sideStartX;
         summarizeButtonY = getPaddingTop() + dp(8);

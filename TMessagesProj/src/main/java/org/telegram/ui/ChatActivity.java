@@ -33765,9 +33765,10 @@ public class ChatActivity extends BaseFragment implements
                 if (selectedObject == null) {
                     break;
                 }
-                CharSequence text = selectedObject.messageText != null ? selectedObject.messageText : selectedObject.caption;
+                CharSequence caption = getMessageCaption(selectedObject, selectedObjectGroup);
+                CharSequence text = !TextUtils.isEmpty(caption) ? caption : selectedObject.messageText;
                 if (!TextUtils.isEmpty(text)) {
-                    TTSManager.getInstance().readAloud(text.toString().trim().replaceAll("\\s+", " "), getContext());
+                    TTSManager.getInstance().readAloud(text.toString().trim().replaceAll("\\s+", " "), selectedObject, getContext());
                 }
                 break;
             }
@@ -39278,11 +39279,30 @@ public class ChatActivity extends BaseFragment implements
             if (msg == null) {
                 return;
             }
+            if (TranslateController.isVoiceTranscriptionSummarizable(msg)) {
+                if (msg.messageOwner.summarizedOpen) {
+                    msg.messageOwner.summarizedOpen = false;
+                    msg.updateTranslation(true);
+                    getMessagesStorage().updateMessageCustomParams(msg.getDialogId(), msg.messageOwner);
+                    forceUpdate(cell, true, true);
+                } else {
+                    msg.messageOwner.summarizedOpen = true;
+                    msg.updateTranslation(true);
+                    getMessagesStorage().updateMessageCustomParams(msg.getDialogId(), msg.messageOwner);
+                    forceUpdate(cell, true, true);
+                    if (msg.messageOwner.summaryText == null) {
+                        getMessagesController().getTranslateController().summarizeVoiceTranscription(msg, () -> {
+                            msg.updateTranslation(true);
+                            forceUpdate(cell, true, true);
+                        });
+                    }
+                }
+                return;
+            }
             msg.messageOwner.summarizedOpen = !msg.messageOwner.summarizedOpen;
-            final boolean opened = msg.messageOwner.summarizedOpen;
             msg.updateTranslation(true);
             getMessagesStorage().updateMessageCustomParams(msg.getDialogId(), msg.messageOwner);
-            getMessagesController().getTranslateController().checkTranslation(msg, true);
+            getMessagesController().getTranslateController().checkTranslation(msg, true, true, null);
             forceUpdate(cell, true, true);
         }
 

@@ -1,22 +1,24 @@
 package org.telegram.messenger;
 
 import android.content.Context;
-import android.media.AudioAttributes;
-import android.media.AudioFormat;
-import android.media.AudioTrack;
-import android.os.SystemClock;
 import android.text.TextUtils;
 import android.util.Base64;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
+import org.telegram.tgnet.ConnectionsManager;
+import org.telegram.tgnet.TLRPC;
 
 import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -28,7 +30,8 @@ public final class TTSManager {
     private static final TTSManager INSTANCE = new TTSManager();
 
     private volatile HttpURLConnection connection;
-    private volatile AudioTrack player;
+    private volatile MessageObject playingMessage;
+    private volatile File audioFile;
     private volatile int requestId;
 
     private TTSManager() {}
@@ -37,7 +40,7 @@ public final class TTSManager {
         return INSTANCE;
     }
 
-    public void readAloud(String text, Context context) {
+    public void readAloud(String text, MessageObject source, Context context) {
         if (TextUtils.isEmpty(text) || TextUtils.isEmpty(BuildVars.GEMINI_API_KEY)) {
             return;
         }
@@ -46,7 +49,7 @@ public final class TTSManager {
         EXECUTOR.execute(() -> {
             byte[] pcm = request(text);
             if (pcm != null && id == requestId) {
-                play(pcm, id);
+                play(pcm, source, context, id);
             }
         });
     }
@@ -116,40 +119,72 @@ public final class TTSManager {
         throw new IllegalArgumentException("Gemini TTS response has no audio");
     }
 
-    private void play(byte[] pcm, int id) {
-        int bufferSize = Math.max(16 * 1024, AudioTrack.getMinBufferSize(24_000,
-                AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT));
-        AudioTrack current = new AudioTrack.Builder()
-                .setAudioAttributes(new AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_MEDIA)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                        .build())
-                .setAudioFormat(new AudioFormat.Builder()
-                        .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                        .setSampleRate(24_000)
-                        .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
-                        .build())
-                .setBufferSizeInBytes(bufferSize)
-                .setTransferMode(AudioTrack.MODE_STREAM)
-                .build();
-        player = current;
-        current.play();
-        int offset = 0;
-        while (offset < pcm.length && id == requestId) {
-            int written = current.write(pcm, offset, Math.min(bufferSize, pcm.length - offset));
-            if (written <= 0) {
-                break;
+    private void play(byte[] pcm, MessageObject source, Context context, int id) {
+        File file = new File(context.getCacheDir(), "gumlet_tts_" + id + ".wav");
+        try (FileOutputStream output = new FileOutputStream(file)) {
+            output.write(wrapPcmInWav(pcm));
+        } catch (Exception e) {
+            FileLog.e("Unable to prepare TTS audio", e);
+            file.delete();
+            return;
+        }
+        AndroidUtilities.runOnUIThread(() -> {
+            if (id != requestId) {
+                file.delete();
+                return;
             }
-            offset += written;
-        }
-        while (offset == pcm.length && id == requestId && current.getPlaybackHeadPosition() < pcm.length / 2) {
-            SystemClock.sleep(20);
-        }
-        if (player == current) {
-            player = null;
-            current.stop();
-            current.release();
-        }
+            MessageObject message = createPlayerMessage(source, file, pcm.length);
+            audioFile = file;
+            playingMessage = message;
+            MediaController.getInstance().playMessage(message);
+        });
+    }
+
+    static byte[] wrapPcmInWav(byte[] pcm) {
+        ByteBuffer wav = ByteBuffer.allocate(44 + pcm.length).order(ByteOrder.LITTLE_ENDIAN);
+        wav.put("RIFF".getBytes(StandardCharsets.US_ASCII));
+        wav.putInt(36 + pcm.length);
+        wav.put("WAVEfmt ".getBytes(StandardCharsets.US_ASCII));
+        wav.putInt(16);
+        wav.putShort((short) 1);
+        wav.putShort((short) 1);
+        wav.putInt(24_000);
+        wav.putInt(48_000);
+        wav.putShort((short) 2);
+        wav.putShort((short) 16);
+        wav.put("data".getBytes(StandardCharsets.US_ASCII));
+        wav.putInt(pcm.length);
+        wav.put(pcm);
+        return wav.array();
+    }
+
+    private static MessageObject createPlayerMessage(MessageObject source, File file, int pcmLength) {
+        int account = source.currentAccount;
+        TLRPC.TL_message message = new TLRPC.TL_message();
+        message.out = true;
+        message.id = -Math.max(1, Math.abs(Utilities.random.nextInt()));
+        message.dialog_id = source.getDialogId();
+        message.peer_id = source.messageOwner.peer_id;
+        message.from_id = new TLRPC.TL_peerUser();
+        message.from_id.user_id = UserConfig.getInstance(account).getClientUserId();
+        message.date = ConnectionsManager.getInstance(account).getCurrentTime();
+        message.message = "";
+        message.attachPath = file.getAbsolutePath();
+        message.media = new TLRPC.TL_messageMediaDocument();
+        message.media.flags |= 3;
+        TLRPC.TL_document document = new TLRPC.TL_document();
+        document.id = message.id;
+        document.file_reference = new byte[0];
+        document.date = message.date;
+        document.mime_type = "audio/wav";
+        document.size = (int) file.length();
+        TLRPC.TL_documentAttributeAudio audio = new TLRPC.TL_documentAttributeAudio();
+        audio.voice = true;
+        audio.duration = pcmLength / 48_000.0;
+        document.attributes.add(audio);
+        message.media.document = document;
+        message.flags |= TLRPC.MESSAGE_FLAG_HAS_MEDIA | TLRPC.MESSAGE_FLAG_HAS_FROM_ID;
+        return new MessageObject(account, message, false, true);
     }
 
     private static String read(InputStream stream) throws Exception {
@@ -172,12 +207,15 @@ public final class TTSManager {
         if (currentConnection != null) {
             currentConnection.disconnect();
         }
-        AudioTrack currentPlayer = player;
-        if (currentPlayer != null) {
-            player = null;
-            currentPlayer.pause();
-            currentPlayer.flush();
-            currentPlayer.release();
+        MessageObject currentPlayer = playingMessage;
+        if (currentPlayer != null && MediaController.getInstance().isPlayingMessage(currentPlayer)) {
+            MediaController.getInstance().cleanupPlayer(true, true);
+        }
+        playingMessage = null;
+        File currentFile = audioFile;
+        if (currentFile != null) {
+            audioFile = null;
+            currentFile.delete();
         }
     }
 

@@ -31,12 +31,8 @@ import org.telegram.tgnet.TLRPC;
 import org.telegram.tgnet.Vector;
 import org.telegram.tgnet.tl.TL_iv;
 import org.telegram.tgnet.tl.TL_stories;
-import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.Components.Bulletin;
-import org.telegram.ui.Components.BulletinFactory;
 import org.telegram.ui.Components.TranslateAlert2;
-import org.telegram.ui.LaunchActivity;
-import org.telegram.ui.PremiumPreviewFragment;
 import org.telegram.ui.RestrictedLanguagesSelectActivity;
 
 import java.util.ArrayList;
@@ -583,14 +579,14 @@ public class TranslateController extends BaseController {
     }
 
     public void checkTranslation(MessageObject messageObject, boolean onScreen) {
-        checkTranslation(messageObject, onScreen, false, null);
+        checkTranslation(messageObject, onScreen, false, false, null);
     }
 
-    public void checkTranslation(MessageObject messageObject, boolean onScreen, @Nullable Runnable summaryCallback) {
-        checkTranslation(messageObject, onScreen, false, summaryCallback);
+    public void checkTranslation(MessageObject messageObject, boolean onScreen, boolean autoSummarize, @Nullable Runnable summaryCallback) {
+        checkTranslation(messageObject, onScreen, autoSummarize, false, summaryCallback);
     }
 
-    private void checkTranslation(MessageObject messageObject, boolean onScreen, boolean keepReply, @Nullable Runnable summaryCallback) {
+    private void checkTranslation(MessageObject messageObject, boolean onScreen, boolean autoSummarize, boolean keepReply, @Nullable Runnable summaryCallback) {
         if (messageObject == null || messageObject.messageOwner == null) {
             if (summaryCallback != null) {
                 summaryCallback.run();
@@ -600,7 +596,7 @@ public class TranslateController extends BaseController {
 
         final long dialogId = messageObject.getDialogId();
 
-        final boolean autoSummarize = isGumletChannelPost(messageObject) && isSummarizable(messageObject);
+        autoSummarize = autoSummarize && isGumletChannelPost(messageObject) && isSummarizable(messageObject);
         if (autoSummarize &&
                 messageObject.messageOwner.summaryText == null && !messageObject.messageOwner.summarizedOpen) {
             messageObject.messageOwner.summarizedOpen = true;
@@ -614,7 +610,7 @@ public class TranslateController extends BaseController {
             getMessagesStorage().updateMessageCustomParams(dialogId, messageObject.messageOwner);
         }
 
-        if ((onScreen || autoSummarize) && messageObject.messageOwner.summarizedOpen && messageObject.messageOwner.summaryText == null && !isTranslatingDialog(messageObject.getDialogId())) {
+        if (autoSummarize && messageObject.messageOwner.summarizedOpen && messageObject.messageOwner.summaryText == null && !isTranslatingDialog(messageObject.getDialogId())) {
             final MessageObject finalMessageObject = messageObject;
             pushToSummarize(finalMessageObject, null, (text) -> {
                 finalMessageObject.messageOwner.summaryText = text;
@@ -638,7 +634,7 @@ public class TranslateController extends BaseController {
         }
 
         if (!keepReply && messageObject.replyMessageObject != null) {
-            checkTranslation(messageObject.replyMessageObject, onScreen, true, null);
+            checkTranslation(messageObject.replyMessageObject, onScreen, false, true, null);
         }
 
         if (!isTranslatable(messageObject)) {
@@ -1027,6 +1023,7 @@ public class TranslateController extends BaseController {
         }
         if (!LocalGemmaSummaryClient.isAvailable()) {
             message.messageOwner.summarizedOpen = false;
+            getMessagesStorage().updateMessageCustomParams(message.getDialogId(), message.messageOwner);
             AndroidUtilities.runOnUIThread(callback);
             return;
         }
@@ -1055,53 +1052,22 @@ public class TranslateController extends BaseController {
 
         loadingSummarizations.add(id);
 
-        if (isGumletChannelPost(message)) {
-            if (!GemmaSummaryClient.isConfigured()) {
+        if (!GemmaSummaryClient.isConfigured()) {
+            loadingSummarizations.remove(id);
+            callback.run(null);
+        } else {
+            GemmaSummaryClient.summarize(message.messageOwner.message, language, summary -> AndroidUtilities.runOnUIThread(() -> {
                 loadingSummarizations.remove(id);
-                callback.run(null);
-            } else {
-                GemmaSummaryClient.summarize(message.messageOwner.message, language, summary -> AndroidUtilities.runOnUIThread(() -> {
-                    loadingSummarizations.remove(id);
-                    if (TextUtils.isEmpty(summary)) {
-                        callback.run(null);
-                        return;
-                    }
-                    TLRPC.TL_textWithEntities result = new TLRPC.TL_textWithEntities();
-                    result.text = summary;
-                    result.entities = new ArrayList<>();
-                    callback.run(result);
-                }));
-            }
-            return;
-        }
-
-        final TLRPC.TL_messages_summarizeText req = new TLRPC.TL_messages_summarizeText();
-        req.peer = MessagesController.getInstance(currentAccount).getInputPeer(message.getDialogId());
-        req.id = message.getId();
-        if (language != null) {
-            req.flags |= TLObject.FLAG_0;
-            req.to_lang = normalizeLanguage(language);
-        }
-        ConnectionsManager.getInstance(currentAccount).sendRequestTyped(req, AndroidUtilities::runOnUIThread, (res, err) -> {
-            if (res != null) {
-                loadingSummarizations.remove(id);
-                callback.run(res);
-            } else if (err != null) {
-                if ("SUMMARY_FLOOD_PREMIUM".equalsIgnoreCase(err.text)) {
-                    final BaseFragment lastFragment = LaunchActivity.getSafeLastFragment();
-                    if (lastFragment != null) {
-                        BulletinFactory.of(lastFragment)
-                            .createSimpleBulletin(R.raw.star_premium_2, getString(R.string.SummaryLimit), getString(R.string.SummaryLimitUpgrade), () -> {
-                                lastFragment.presentFragment(new PremiumPreviewFragment("summarize_limit"));
-                            })
-                            .setDuration(Bulletin.DURATION_PROLONG)
-                            .show(true);
-                    }
+                if (TextUtils.isEmpty(summary)) {
+                    callback.run(null);
+                    return;
                 }
-                loadingSummarizations.remove(id);
-                callback.run(null);
-            }
-        });
+                TLRPC.TL_textWithEntities result = new TLRPC.TL_textWithEntities();
+                result.text = summary;
+                result.entities = new ArrayList<>();
+                callback.run(result);
+            }));
+        }
     }
 
     private static class PendingTranslation {
