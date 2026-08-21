@@ -367,38 +367,8 @@ public class TranslateAlert2 extends BottomSheet implements NotificationCenter.N
             textWithEntities.entities = reqMessageEntities;
         }
 
-        if (reqSum && reqPeer != null) {
-            TLRPC.TL_messages_summarizeText req = new TLRPC.TL_messages_summarizeText();
-            req.flags |= 1;
-            req.peer = reqPeer;
-            req.id = reqMessageId;
-            req.to_lang = normalizeLanguage(lang);
-            reqId = ConnectionsManager.getInstance(currentAccount).sendRequestTyped(req, AndroidUtilities::runOnUIThread, (res, err) -> {
-                reqId = null;
-                if (err != null && "TRANSLATIONS_DISABLED_ALT".equalsIgnoreCase(err.text)) {
-                    translateAlt();
-                } else if (res != null) {
-                    firstTranslation = false;
-                    TLRPC.TL_textWithEntities text = preprocess(textWithEntities, res);
-                    CharSequence translated = SpannableStringBuilder.valueOf(text.text);
-                    MessageObject.addEntitiesToText(translated, text.entities, false, true, false, false);
-                    translated = preprocessText(translated);
-                    textView.setText(translated);
-                    adapter.updateMainView(textViewContainer);
-                } else if (firstTranslation) {
-                    dismiss();
-                    NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.showBulletin, Bulletin.TYPE_ERROR, LocaleController.getString(R.string.TranslationFailedAlert2));
-                } else {
-                    BulletinFactory.of((FrameLayout) containerView, resourcesProvider).createErrorBulletin(LocaleController.getString(R.string.TranslationFailedAlert2)).show();
-                    headerView.toLanguageTextView.setText(languageName(toLanguage = prevToLanguage));
-                    adapter.updateMainView(textViewContainer);
-                }
-            });
-            return;
-        }
-
         TLRPC.TL_messages_translateText req = new TLRPC.TL_messages_translateText();
-        if (reqPeer != null) {
+        if (reqPeer != null && !reqSum) {
             req.flags |= 1;
             req.peer = reqPeer;
             req.id.add(reqMessageId);

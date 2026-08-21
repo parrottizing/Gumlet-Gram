@@ -383,78 +383,44 @@ public class TranslateAlert3 extends BottomSheetWithRecyclerListView {
         translated = loadingText;
         translatedLoading = true;
 
-        if (summarized && dialogId != 0 && messageId != 0) {
-            final TLRPC.TL_messages_summarizeText req = new TLRPC.TL_messages_summarizeText();
+        final TLRPC.TL_messages_translateText req = new TLRPC.TL_messages_translateText();
+        req.to_lang = to_lang;
 
+        if (dialogId != 0 && messageId != 0 && !summarized) {
             req.flags |= TLObject.FLAG_0;
-            req.to_lang = to_lang;
-
             req.peer = MessagesController.getInstance(currentAccount).getInputPeer(dialogId);
-            req.id = messageId;
-
-            if (tone != 1) {
-                req.flags |= TLObject.FLAG_2;
-                req.tone = tones[tone];
-            }
-
-            requestId = ConnectionsManager.getInstance(currentAccount).sendRequestTyped(req, AndroidUtilities::runOnUIThread, (res, err) -> {
-                requestId = -1;
-
-                button.setLoading(false);
-                if (err != null) {
-                    BulletinFactory.of(topBulletinContainer, resourcesProvider).showForError(err);
-
-                    button.setText(getString(R.string.OK));
-                    button.setOnClickListener(v -> dismiss());
-                    return;
-                }
-
-                translated = MessageObject.formatTextWithEntities(res);
-                translatedLoading = false;
-
-                adapter.update(true);
-            });
+            req.id.add(messageId);
         } else {
-
-            final TLRPC.TL_messages_translateText req = new TLRPC.TL_messages_translateText();
-            req.to_lang = to_lang;
-
-            if (dialogId != 0 && messageId != 0) {
-                req.flags |= TLObject.FLAG_0;
-                req.peer = MessagesController.getInstance(currentAccount).getInputPeer(dialogId);
-                req.id.add(messageId);
-            } else {
-                req.flags |= TLObject.FLAG_1;
-                req.text.add(fromText);
-            }
-
-            if (tone != 1) {
-                req.flags |= TLObject.FLAG_2;
-                req.tone = tones[tone];
-            }
-
-            requestId = ConnectionsManager.getInstance(currentAccount).sendRequestTyped(req, AndroidUtilities::runOnUIThread, (res, err) -> {
-                requestId = -1;
-
-                button.setLoading(false);
-                if (err != null) {
-                    BulletinFactory.of(topBulletinContainer, resourcesProvider).showForError(err);
-
-                    button.setText(getString(R.string.OK));
-                    button.setOnClickListener(v -> dismiss());
-                    return;
-                }
-                if (res == null || res.result.isEmpty()) {
-                    button.setText(getString(R.string.OK));
-                    button.setOnClickListener(v -> dismiss());
-                    return;
-                }
-                translated = MessageObject.formatTextWithEntities(res.result.get(0));
-                translatedLoading = false;
-
-                adapter.update(true);
-            });
+            req.flags |= TLObject.FLAG_1;
+            req.text.add(fromText);
         }
+
+        if (tone != 1) {
+            req.flags |= TLObject.FLAG_2;
+            req.tone = tones[tone];
+        }
+
+        requestId = ConnectionsManager.getInstance(currentAccount).sendRequestTyped(req, AndroidUtilities::runOnUIThread, (res, err) -> {
+            requestId = -1;
+
+            button.setLoading(false);
+            if (err != null) {
+                BulletinFactory.of(topBulletinContainer, resourcesProvider).showForError(err);
+
+                button.setText(getString(R.string.OK));
+                button.setOnClickListener(v -> dismiss());
+                return;
+            }
+            if (res == null || res.result.isEmpty()) {
+                button.setText(getString(R.string.OK));
+                button.setOnClickListener(v -> dismiss());
+                return;
+            }
+            translated = MessageObject.formatTextWithEntities(res.result.get(0));
+            translatedLoading = false;
+
+            adapter.update(true);
+        });
 
         adapter.update(true);
     }

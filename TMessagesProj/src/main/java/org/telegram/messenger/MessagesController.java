@@ -20778,7 +20778,7 @@ public class MessagesController extends BaseController implements NotificationCe
                 for (int a = 0, size = messagesFinal.size(); a < size; a++) {
                     long key = messagesFinal.keyAt(a);
                     ArrayList<MessageObject> value = messagesFinal.valueAt(a);
-                    if (updateInterfaceWithMessages(key, value, 0)) {
+                    if (updateInterfaceWithMessages(key, value, 0, !fromGetDifference)) {
                         sorted = true;
                     }
                 }
@@ -21765,6 +21765,10 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     public boolean updateInterfaceWithMessages(long dialogId, ArrayList<MessageObject> messages, int mode) {
+        return updateInterfaceWithMessages(dialogId, messages, mode, false);
+    }
+
+    private boolean updateInterfaceWithMessages(long dialogId, ArrayList<MessageObject> messages, int mode, boolean summarizeNewChannelPosts) {
         if (messages == null || messages.isEmpty()) {
             return false;
         }
@@ -21819,9 +21823,11 @@ public class MessagesController extends BaseController implements NotificationCe
             QuickRepliesController.getInstance(currentAccount).checkLocalMessages(messages);
         }
         ArrayList<MessageObject> postsToSummarize = new ArrayList<>();
-        for (MessageObject message : messages) {
-            if (TranslateController.isGumletChannelPost(message) && TranslateController.isSummarizable(message) && message.messageOwner.summaryText == null) {
-                postsToSummarize.add(message);
+        if (summarizeNewChannelPosts) {
+            for (MessageObject message : messages) {
+                if (TranslateController.isGumletChannelPost(message) && TranslateController.isSummarizable(message) && message.messageOwner.summaryText == null) {
+                    postsToSummarize.add(message);
+                }
             }
         }
         if (postsToSummarize.isEmpty()) {
@@ -21829,7 +21835,7 @@ public class MessagesController extends BaseController implements NotificationCe
         } else {
             int[] remaining = {postsToSummarize.size()};
             for (MessageObject message : postsToSummarize) {
-                getTranslateController().checkTranslation(message, false, () -> {
+                getTranslateController().checkTranslation(message, false, true, () -> {
                     if (--remaining[0] == 0) {
                         for (MessageObject post : postsToSummarize) {
                             if (post.messageOwner.summaryText == null) {

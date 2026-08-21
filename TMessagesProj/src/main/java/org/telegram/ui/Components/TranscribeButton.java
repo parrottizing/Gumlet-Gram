@@ -830,9 +830,7 @@ public class TranscribeButton {
             messageObject.messageOwner.summarizedOpen = false;
             MessagesStorage.getInstance(messageObject.currentAccount).updateMessageVoiceTranscription(messageObject.getDialogId(), messageObject.getId(), text, messageObject.messageOwner);
             messageObject.messageOwner.voiceTranscription = text;
-            MessagesController.getInstance(messageObject.currentAccount).getTranslateController().summarizeVoiceTranscription(finalMessageObject, () -> {
-                NotificationCenter.getInstance(finalMessageObject.currentAccount).postNotificationName(NotificationCenter.voiceTranscriptionUpdate, finalMessageObject, (Long) transcription_id, (String) text, (Boolean) true, (Boolean) true);
-            });
+            NotificationCenter.getInstance(finalMessageObject.currentAccount).postNotificationName(NotificationCenter.voiceTranscriptionUpdate, finalMessageObject, (Long) transcription_id, (String) text, (Boolean) true, (Boolean) true);
             return true;
         } catch (Exception ignore) {}
         return false;
