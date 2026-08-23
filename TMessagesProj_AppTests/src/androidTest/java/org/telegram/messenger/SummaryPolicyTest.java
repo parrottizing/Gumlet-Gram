@@ -15,4 +15,12 @@ public class SummaryPolicyTest {
         assertTrue(SummaryPolicy.shouldSummarize("Реквизиты: ИНН 1234567890"));
         assertTrue(SummaryPolicy.shouldSummarize(new String(new char[151]).replace('\0', 'x')));
     }
+
+    @Test
+    public void transcriptionPromptDoesNotForcePostSummaryLength() {
+        String prompt = GemmaSummaryClient.buildTranscriptionPrompt("длинная расшифровка");
+        assertTrue(prompt.contains("длинная расшифровка"));
+        assertFalse(prompt.contains("8 слов"));
+        assertFalse(prompt.contains("одно очень короткое предложение"));
+    }
 }

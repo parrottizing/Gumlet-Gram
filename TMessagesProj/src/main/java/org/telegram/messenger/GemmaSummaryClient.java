@@ -24,4 +24,9 @@ public final class GemmaSummaryClient {
                 "\n\nТекст поста:\n" + originalText;
     }
 
+    static String buildTranscriptionPrompt(String originalText) {
+        return "Суммируй расшифровку голосового или видеосообщения. Отвечай строго на русском языке." +
+                "\n\nРасшифровка:\n" + originalText;
+    }
+
 }

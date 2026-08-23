@@ -28,15 +28,18 @@ public final class LocalGemmaSummaryClient {
     }
 
     public static void summarize(String originalText, @Nullable String language, GemmaSummaryClient.Callback callback) {
-        EXECUTOR.execute(() -> callback.onResult(request(originalText, language)));
+        EXECUTOR.execute(() -> callback.onResult(request(GemmaSummaryClient.buildPrompt(originalText, language), 64)));
+    }
+
+    public static void summarizeTranscription(String originalText, GemmaSummaryClient.Callback callback) {
+        EXECUTOR.execute(() -> callback.onResult(request(GemmaSummaryClient.buildTranscriptionPrompt(originalText), 512)));
     }
 
     @Nullable
-    private static String request(String originalText, @Nullable String language) {
+    private static String request(String prompt, int maxTokens) {
         try (Conversation conversation = getEngine().createConversation(new ConversationConfig())) {
             String result = conversation.sendMessage(
-                    GemmaSummaryClient.buildPrompt(originalText, language),
-                    Collections.emptyMap(), null, null, null, 64, null, null
+                    prompt, Collections.emptyMap(), null, null, null, maxTokens, null, null
             ).toString().trim();
             FileLog.d("Local Gemma summary completed");
             return result.isEmpty() ? null : result;
