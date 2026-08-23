@@ -1027,8 +1027,13 @@ public class TranslateController extends BaseController {
             AndroidUtilities.runOnUIThread(callback);
             return;
         }
+        final int id = Objects.hash(message.getDialogId(), message.getId(), isTranslatingDialog(message.getDialogId()) ? 1 : 0);
+        if (!loadingSummarizations.add(id)) {
+            return;
+        }
         getMessagesStorage().updateMessageCustomParams(message.getDialogId(), message.messageOwner);
-        LocalGemmaSummaryClient.summarize(message.messageOwner.voiceTranscription, null, summary -> AndroidUtilities.runOnUIThread(() -> {
+        LocalGemmaSummaryClient.summarizeTranscription(message.messageOwner.voiceTranscription, summary -> AndroidUtilities.runOnUIThread(() -> {
+            loadingSummarizations.remove(id);
             if (!TextUtils.isEmpty(summary)) {
                 TLRPC.TL_textWithEntities result = new TLRPC.TL_textWithEntities();
                 result.text = summary;

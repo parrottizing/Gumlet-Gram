@@ -10542,7 +10542,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                     }
                 }
                 if (messageObject.isRoundVideo() && messageObject.isVoiceTranscriptionOpen()) {
-                    photoImage.setImageCoords(0, dp(13), dp(44), dp(44));
+                    photoImage.setImageCoords(0, dp(13) + namesOffset, dp(44), dp(44));
                 } else {
                     photoImage.setImageCoords(0, y + namesOffset + additionalTop, photoWidth, photoHeight);
                 }
@@ -21588,7 +21588,9 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
     private SummaryIcon summarizeIcon;
     private boolean shouldDrawSummarizeButton() {
         MessageObject summaryMessage = getSummaryMessageObject();
-        boolean isSummaryHost = currentPosition == null || currentPosition.minX == 0 && currentPosition.minY == 0;
+        boolean isSummaryHost = currentPosition == null || currentMessagesGroup != null && currentMessagesGroup.isDocuments && currentPosition.last ||
+                (currentPosition.flags & MessageObject.POSITION_FLAG_BOTTOM) != 0 &&
+                (currentPosition.flags & (currentMessageObject.isOutOwner() ? MessageObject.POSITION_FLAG_LEFT : MessageObject.POSITION_FLAG_RIGHT)) != 0;
         return isSummaryHost && summaryMessage != null && (TranslateController.isSummarizable(summaryMessage) ||
                 TranslateController.isVoiceTranscriptionSummarizable(summaryMessage));
     }
