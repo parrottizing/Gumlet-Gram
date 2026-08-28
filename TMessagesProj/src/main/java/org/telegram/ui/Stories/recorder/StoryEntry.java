@@ -21,6 +21,7 @@ import android.text.TextUtils;
 import android.util.Pair;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ApplicationLoader;
@@ -34,12 +35,12 @@ import org.telegram.messenger.ImageLoader;
 import org.telegram.messenger.MediaController;
 import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesController;
+import org.telegram.messenger.SendMessagesHelper;
 import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.Utilities;
 import org.telegram.messenger.VideoEditedInfo;
 import org.telegram.messenger.video.MediaCodecVideoConvertor;
-import org.telegram.tgnet.AbstractSerializedData;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.RequestDelegate;
 import org.telegram.tgnet.TLObject;
@@ -47,15 +48,16 @@ import org.telegram.tgnet.TLRPC;
 import org.telegram.tgnet.Vector;
 import org.telegram.tgnet.tl.TL_stories;
 import org.telegram.ui.ActionBar.Theme;
-import org.telegram.ui.Components.AnimatedFileDrawable;
+import org.telegram.ui.ChatActivity;
+import org.telegram.ui.Components.AnimatedFileNative;
 import org.telegram.ui.Components.PhotoFilterView;
-import org.telegram.ui.Components.RLottieDrawable;
+import org.telegram.ui.Components.RLottieNative;
+import org.telegram.ui.Components.voip.AnimatedFileInfo;
 
 import java.io.File;
 import java.io.FileOutputStream;
-import java.nio.file.Files;
-import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 
 public class StoryEntry {
@@ -76,6 +78,7 @@ public class StoryEntry {
     public ArrayList<TL_stories.MediaArea> editedMediaAreas;
 
     public boolean isRepost;
+    public boolean isShare;
     public CharSequence repostPeerName;
     public TLRPC.Peer repostPeer;
     public int repostStoryId;
@@ -89,6 +92,7 @@ public class StoryEntry {
     public TLRPC.TL_error error;
 
     public String audioPath;
+    public TLRPC.InputDocument audioDocument;
     public String audioAuthor, audioTitle;
     public long audioDuration;
     public long audioOffset;
@@ -141,6 +145,7 @@ public class StoryEntry {
     public float roundVolume = 1;
 
     public TLRPC.InputPeer peer;
+    public HashSet<Integer> albums;
 
     public Drawable backgroundDrawable;
     public boolean isDark = Theme.isCurrentThemeDark();
@@ -233,7 +238,7 @@ public class StoryEntry {
     public static boolean isAnimated(TLRPC.Document document, String path) {
         return document != null && (
             "video/webm".equals(document.mime_type) || "video/mp4".equals(document.mime_type) ||
-            MessageObject.isAnimatedStickerDocument(document, true) && RLottieDrawable.getFramesCount(path, null) > 1
+            MessageObject.isAnimatedStickerDocument(document, true) && RLottieNative.getFramesCount(path, null) > 1
         );
     }
 
@@ -364,7 +369,7 @@ public class StoryEntry {
                 final File file = filterFile != null ? filterFile : this.file;
                 if (file != null) {
                     try {
-                        Bitmap fileBitmap = getScaledBitmap(opts -> BitmapFactory.decodeFile(file.getPath(), opts), w, h, true, true);
+                        Bitmap fileBitmap = getScaledBitmap(opts -> BitmapFactory.decodeFile(file.getPath(), opts), w, h, orientation, true, true);
                         final float s = (float) width / fileBitmap.getWidth();
                         tempMatrix.preScale(s, s);
                         tempMatrix.postScale(scale, scale);
@@ -481,6 +486,16 @@ public class StoryEntry {
     }
 
     public static Bitmap getScaledBitmap(DecodeBitmap decode, int maxWidth, int maxHeight, boolean allowBlur, boolean scale) {
+        return getScaledBitmap(decode, maxWidth, maxHeight, 0, allowBlur, scale);
+    }
+
+    public static Bitmap getScaledBitmap(DecodeBitmap decode, int maxWidth, int maxHeight, int orientation, boolean allowBlur, boolean scale) {
+        if (orientation == 90 || orientation == 270) {
+            int s = maxWidth;
+            maxWidth = maxHeight;
+            maxHeight = s;
+        }
+
         BitmapFactory.Options opts = new BitmapFactory.Options();
         opts.inJustDecodeBounds = true;
         decode.decode(opts);
@@ -507,20 +522,10 @@ public class StoryEntry {
             final int w = (int) (bitmap.getWidth() * s), h = (int) (bitmap.getHeight() * s);
 
             Bitmap scaledBitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
-            Canvas canvas = new Canvas(scaledBitmap);
 
-            final Matrix matrix = new Matrix();
-            final BitmapShader shader = new BitmapShader(bitmap, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP);
-            final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
-            paint.setShader(shader);
+            Utilities.libyuvARGBSaleBitmap(bitmap, scaledBitmap, Utilities.libyuv_ScaleFilter.Box);
 
             int blurRadius = Utilities.clamp(Math.round(1f / s), 8, 0);
-
-            matrix.reset();
-            matrix.postScale(s, s);
-            shader.setLocalMatrix(matrix);
-            canvas.drawRect(0, 0, w, h, paint);
-
 //            if (allowBlur && blurRadius > 0) {
 //                Utilities.stackBlurBitmap(scaledBitmap, blurRadius);
 //            }
@@ -528,8 +533,15 @@ public class StoryEntry {
             return scaledBitmap;
         } else {
             opts.inScaled = true;
-            opts.inDensity = opts.outWidth;
-            opts.inTargetDensity = maxWidth;
+            final float scaleX = maxWidth / (float) opts.outWidth;
+            final float scaleY = maxHeight / (float) opts.outHeight;
+            if (scaleX > scaleY) {
+                opts.inDensity = opts.outWidth;
+                opts.inTargetDensity = maxWidth;
+            } else {
+                opts.inDensity = opts.outHeight;
+                opts.inTargetDensity = maxHeight;
+            }
             return decode.decode(opts);
         }
     }
@@ -937,7 +949,7 @@ public class StoryEntry {
         entry.file = new File(photoEntry.path);
         entry.orientation = photoEntry.orientation;
         entry.invert = photoEntry.invert;
-        entry.isVideo = photoEntry.isVideo;
+        entry.isVideo = !photoEntry.isLivePhoto() && photoEntry.isVideo;
         entry.thumbPath = photoEntry.thumbPath;
         entry.duration = photoEntry.duration * 1000L;
         entry.left = 0;
@@ -1020,6 +1032,25 @@ public class StoryEntry {
         }
         entry.setupMatrix();
         return entry;
+    }
+
+    @Nullable
+    public static StoryEntry fromMedia(ArrayList<SendMessagesHelper.SendingMediaInfo> photoPathes) {
+        final ArrayList<MediaController.PhotoEntry> entries = ChatActivity.createEntriesFromMedia(photoPathes, false, null);
+        if (entries.isEmpty()) {
+            return null;
+        }
+
+        //if (entries.size() == 1) {
+            return fromPhotoEntry(entries.get(0));
+        /*}
+
+        final ArrayList<StoryEntry> entries1 = new ArrayList<>(entries.size());
+        for (MediaController.PhotoEntry entry: entries) {
+            entries1.add(fromPhotoEntry(entry));
+        }
+
+        return asCollage(CollageLayout.of(entries1.size()), entries1);*/
     }
 
     public void decodeBounds(String path) {
@@ -1219,8 +1250,8 @@ public class StoryEntry {
             resultHeight = 1280;
         }
         final String videoPath = file == null ? null : file.getAbsolutePath();
-        final int[][] params = new int[Math.max(1, isCollage() ? collageContent.size() : 0)][AnimatedFileDrawable.PARAM_NUM_COUNT];
-        params[0] = new int[AnimatedFileDrawable.PARAM_NUM_COUNT];
+        final int[][] params = new int[Math.max(1, isCollage() ? collageContent.size() : 0)][AnimatedFileInfo.PARAM_NUM_COUNT];
+        params[0] = new int[AnimatedFileInfo.PARAM_NUM_COUNT];
         Runnable fill = () -> {
             VideoEditedInfo info = new VideoEditedInfo();
 
@@ -1240,9 +1271,9 @@ public class StoryEntry {
             if (isVideo && videoPath != null && !isCollage()) {
                 info.originalPath = videoPath;
                 info.isPhoto = false;
-                info.framerate = Math.min(59, params[0][AnimatedFileDrawable.PARAM_NUM_FRAMERATE]);
+                info.framerate = Math.min(59, params[0][AnimatedFileInfo.PARAM_NUM_FRAMERATE]);
                 int videoBitrate = MediaController.getVideoBitrate(videoPath);
-                info.originalBitrate = videoBitrate == -1 ? params[0][AnimatedFileDrawable.PARAM_NUM_BITRATE] : videoBitrate;
+                info.originalBitrate = videoBitrate == -1 ? params[0][AnimatedFileInfo.PARAM_NUM_BITRATE] : videoBitrate;
                 if (info.originalBitrate < 1_000_000 && (mediaEntities != null && !mediaEntities.isEmpty())) {
                     info.bitrate = 2_000_000;
                     info.originalBitrate = -1;
@@ -1253,13 +1284,13 @@ public class StoryEntry {
                     info.bitrate = Utilities.clamp(info.originalBitrate, 3_000_000, 500_000);
                 }
                 FileLog.d("story bitrate, original = " + info.originalBitrate + " => " + info.bitrate);
-                info.originalDuration = (duration = params[0][AnimatedFileDrawable.PARAM_NUM_DURATION]) * 1000L;
+                info.originalDuration = (duration = params[0][AnimatedFileInfo.PARAM_NUM_DURATION]) * 1000L;
                 info.startTime = (long) (left * duration) * 1000L;
                 info.endTime = (long) (right * duration) * 1000L;
                 info.estimatedDuration = info.endTime - info.startTime;
                 info.volume = videoVolume;
                 info.muted = muted;
-                info.estimatedSize = (long) (params[0][AnimatedFileDrawable.PARAM_NUM_AUDIO_FRAME_SIZE] + params[0][AnimatedFileDrawable.PARAM_NUM_DURATION] / 1000.0f * encoderBitrate / 8);
+                info.estimatedSize = (long) (params[0][AnimatedFileInfo.PARAM_NUM_AUDIO_FRAME_SIZE] + params[0][AnimatedFileInfo.PARAM_NUM_DURATION] / 1000.0f * encoderBitrate / 8);
                 info.estimatedSize = Math.max(file.length(), info.estimatedSize);
                 info.filterState = filterState;
                 info.blurPath = paintBlurFile == null ? null : paintBlurFile.getPath();
@@ -1277,9 +1308,9 @@ public class StoryEntry {
                         StoryEntry e = collageContent.get(i);
                         if (e.isVideo) {
                             hasVideo = true;
-                            e.width = Math.max(e.width, params[i][AnimatedFileDrawable.PARAM_NUM_WIDTH]);
-                            e.height = Math.max(e.height, params[i][AnimatedFileDrawable.PARAM_NUM_HEIGHT]);
-                            e.duration = Math.max(e.duration, params[i][AnimatedFileDrawable.PARAM_NUM_DURATION]);
+                            e.width = Math.max(e.width, params[i][AnimatedFileInfo.PARAM_NUM_WIDTH]);
+                            e.height = Math.max(e.height, params[i][AnimatedFileInfo.PARAM_NUM_HEIGHT]);
+                            e.duration = Math.max(e.duration, params[i][AnimatedFileInfo.PARAM_NUM_DURATION]);
                         }
                     }
                     info.collageParts = VideoEditedInfo.Part.toParts(this);
@@ -1397,19 +1428,19 @@ public class StoryEntry {
             final String[] paths = new String[collageContent.size()];
             for (int i = 0; i < collageContent.size(); ++i) {
                 paths[i] = collageContent.get(i).file == null ? null : collageContent.get(i).file.getAbsolutePath();
-                params[i] = new int[AnimatedFileDrawable.PARAM_NUM_COUNT];
+                params[i] = new int[AnimatedFileInfo.PARAM_NUM_COUNT];
             }
             Utilities.globalQueue.postRunnable(() -> {
                 for (int i = 0; i < paths.length; ++i)
                     if (paths[i] != null)
-                        AnimatedFileDrawable.getVideoInfo(paths[i], params[i]);
+                        AnimatedFileNative.getVideoInfo(paths[i], params[i], 0);
                 AndroidUtilities.runOnUIThread(fill);
             });
         } else if (file == null) {
             fill.run();
         } else {
             Utilities.globalQueue.postRunnable(() -> {
-                AnimatedFileDrawable.getVideoInfo(videoPath, params[0]);
+                AnimatedFileNative.getVideoInfo(videoPath, params[0], 0);
                 AndroidUtilities.runOnUIThread(fill);
             });
         }
@@ -1611,6 +1642,7 @@ public class StoryEntry {
         newEntry.isError = isError;
         newEntry.error = error;
         newEntry.audioPath = audioPath;
+        newEntry.audioDocument = audioDocument;
         newEntry.audioAuthor = audioAuthor;
         newEntry.audioTitle = audioTitle;
         newEntry.audioDuration = audioDuration;
@@ -1655,6 +1687,7 @@ public class StoryEntry {
         newEntry.scheduleDate = scheduleDate;
         newEntry.blurredVideoThumb = blurredVideoThumb;
         newEntry.uploadThumbFile = uploadThumbFile;
+        newEntry.albums = albums;
         if (uploadThumbFile != null && uploadThumbFile.exists()) {
             newEntry.uploadThumbFile = StoryEntry.makeCacheFile(currentAccount, ext(uploadThumbFile));
             AndroidUtilities.copyFileSafe(uploadThumbFile, newEntry.uploadThumbFile);
@@ -1708,6 +1741,7 @@ public class StoryEntry {
         newEntry.fromCamera = fromCamera;
         newEntry.thumbPathBitmap = thumbPathBitmap;
         newEntry.isRepost = isRepost;
+        newEntry.isShare = isShare;
         newEntry.round = round;
         newEntry.roundLeft = roundLeft;
         newEntry.roundRight = roundRight;

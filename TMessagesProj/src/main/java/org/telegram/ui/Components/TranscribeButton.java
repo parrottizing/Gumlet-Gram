@@ -34,13 +34,16 @@ import org.telegram.messenger.BuildVars;
 import org.telegram.messenger.ChatObject;
 import org.telegram.messenger.DialogObject;
 import org.telegram.messenger.FileLog;
+import org.telegram.messenger.GroqTranscriptionClient;
 import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.MessagesStorage;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
+import org.telegram.messenger.TranslateController;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.Utilities;
+import org.telegram.messenger.utils.DrawableUtils;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.Theme;
@@ -226,7 +229,7 @@ public class TranscribeButton {
         }
         pressed = false;
         if (processClick) {
-            if (!premium && toOpen) {
+            if (!premium && toOpen && !GroqTranscriptionClient.isConfigured()) {
                 if (canTranscribeTrial(parent.getMessageObject()) || parent.getMessageObject() != null && parent.getMessageObject().messageOwner != null && !TextUtils.isEmpty(parent.getMessageObject().messageOwner.voiceTranscription)) {
                     transcribePressed(parent.getMessageObject(), toOpen, parent.getDelegate());
                 } else {
@@ -572,15 +575,28 @@ public class TranscribeButton {
         private RLottieDrawable lottie;
         private int lastColor;
         private Paint paint;
+        private final Drawable.Callback callback = new Callback() {
+            @Override
+            public void invalidateDrawable(@NonNull Drawable who) {
+                invalidateSelf();
+            }
+
+            @Override
+            public void scheduleDrawable(@NonNull Drawable who, @NonNull Runnable what, long when) {
+
+            }
+
+            @Override
+            public void unscheduleDrawable(@NonNull Drawable who, @NonNull Runnable what) {
+
+            }
+        };
+
         public LoadingPointsDrawable(TextPaint textPaint) {
             this.paint = textPaint;
             float fontSize = textPaint.getTextSize() * 0.89f;
-            lottie = new RLottieDrawable(R.raw.dots_loading, "dots_loading", (int) fontSize, (int) (fontSize * 1.25f)) {
-                @Override
-                protected boolean hasParentView() {
-                    return true;
-                }
-            };
+            lottie = new RLottieDrawable(R.raw.dots_loading, "dots_loading", (int) fontSize, (int) (fontSize * 1.25f));
+            lottie.setCallback(callback);
             lottie.setAutoRepeat(1);
             lottie.setCurrentFrame((int) (SystemClock.elapsedRealtime() / 16f % 60f));
             lottie.setAllowDecodeSingleFrame(true);
@@ -674,6 +690,10 @@ public class TranscribeButton {
                     NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.voiceTranscriptionUpdate, messageObject, null, null, (Boolean) true, (Boolean) true);
                 });
             } else {
+                if (GroqTranscriptionClient.isConfigured()) {
+                    transcribeWithGroq(messageObject, dialogId, messageId);
+                    return;
+                }
                 if (BuildVars.LOGS_ENABLED) {
                     FileLog.d("sending Transcription request, msg_id=" + messageId + " dialog_id=" + dialogId);
                 }
@@ -764,6 +784,31 @@ public class TranscribeButton {
         }
     }
 
+    private static void transcribeWithGroq(MessageObject messageObject, long dialogId, int messageId) {
+        int account = messageObject.currentAccount;
+        if (transcribeOperationsByDialogPosition == null) {
+            transcribeOperationsByDialogPosition = new HashMap<>();
+        }
+        transcribeOperationsByDialogPosition.put(reqInfoHash(messageObject), messageObject);
+        messageObject.messageOwner.voiceTranscriptionOpen = true;
+        messageObject.messageOwner.voiceTranscriptionFinal = false;
+        NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.voiceTranscriptionUpdate, messageObject);
+
+        GroqTranscriptionClient.transcribe(messageObject, (text, error) -> {
+            if (text != null) {
+                openVideoTranscription(messageObject);
+                messageObject.messageOwner.voiceTranscriptionOpen = true;
+                finishTranscription(messageObject, 0, text);
+            } else {
+                transcribeOperationsByDialogPosition.remove(reqInfoHash(messageObject));
+                messageObject.messageOwner.voiceTranscriptionOpen = false;
+                MessagesStorage.getInstance(account).updateMessageVoiceTranscriptionOpen(dialogId, messageId, messageObject.messageOwner);
+                FileLog.e("Groq transcription unavailable: " + error);
+                NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.voiceTranscriptionUpdate, messageObject);
+            }
+        });
+    }
+
     public static boolean finishTranscription(MessageObject messageObject, long transcription_id, String text) {
         try {
             MessageObject messageObjectByTranscriptionId = null;
@@ -781,10 +826,11 @@ public class TranscribeButton {
                 transcribeOperationsByDialogPosition.remove((Integer) reqInfoHash(messageObject));
             }
             messageObject.messageOwner.voiceTranscriptionFinal = true;
+            messageObject.messageOwner.summaryText = null;
+            messageObject.messageOwner.summarizedOpen = false;
             MessagesStorage.getInstance(messageObject.currentAccount).updateMessageVoiceTranscription(messageObject.getDialogId(), messageObject.getId(), text, messageObject.messageOwner);
-            AndroidUtilities.runOnUIThread(() -> {
-                NotificationCenter.getInstance(finalMessageObject.currentAccount).postNotificationName(NotificationCenter.voiceTranscriptionUpdate, finalMessageObject, (Long) transcription_id, (String) text, (Boolean) true, (Boolean) true);
-            });
+            messageObject.messageOwner.voiceTranscription = text;
+            NotificationCenter.getInstance(finalMessageObject.currentAccount).postNotificationName(NotificationCenter.voiceTranscriptionUpdate, finalMessageObject, (Long) transcription_id, (String) text, (Boolean) true, (Boolean) true);
             return true;
         } catch (Exception ignore) {}
         return false;
@@ -814,7 +860,7 @@ public class TranscribeButton {
         }
         ConnectionsManager cc = ConnectionsManager.getInstance(messageObject.currentAccount);
         MessagesController mc = MessagesController.getInstance(messageObject.currentAccount);
-        if (isFreeTranscribeInChat(messageObject)) {
+        if (GroqTranscriptionClient.isConfigured() || isFreeTranscribeInChat(messageObject)) {
             return true;
         }
         if (mc.transcribeAudioTrialWeeklyNumber <= 0 || messageObject.getDuration() > mc.transcribeAudioTrialDurationMax) {
@@ -845,6 +891,9 @@ public class TranscribeButton {
 
     public static boolean showTranscribeLock(MessageObject messageObject) {
         if (messageObject == null || messageObject.messageOwner == null) {
+            return false;
+        }
+        if (GroqTranscriptionClient.isConfigured()) {
             return false;
         }
         if (isFreeTranscribeInChat(messageObject)) {

@@ -35,7 +35,9 @@ import android.text.SpannableString;
 import android.text.Spanned;
 import android.text.StaticLayout;
 import android.text.TextPaint;
+import android.text.TextUtils;
 import android.text.style.ClickableSpan;
+import android.text.style.ReplacementSpan;
 import android.util.StateSet;
 import android.view.MotionEvent;
 import android.view.View;
@@ -155,6 +157,19 @@ public class HintView2 extends View {
 
         setTextSize(14);
         setTextColor(0xffffffff);
+    }
+
+    private float shadowRadius, shadowDx, shadowDy;
+    private int shadowColor;
+
+    public HintView2 setShadow(float radius, float dx, float dy, int color) {
+        this.backgroundPaint.setShadowLayer(
+            shadowRadius = radius,
+            shadowDx = dx,
+            shadowDy = dy,
+            shadowColor = color
+        );
+        return this;
     }
 
     public HintView2 setDirection(int direction) {
@@ -312,7 +327,7 @@ public class HintView2 extends View {
         return this;
     }
 
-    public static float measureCorrectly(CharSequence text, TextPaint paint) {
+    public static float measureCorrectly(CharSequence text, Paint paint) {
         if (text == null) {
             return 0;
         }
@@ -321,28 +336,28 @@ public class HintView2 extends View {
         }
         Spanned spanned = (Spanned) text;
         TypefaceSpan[] spans = spanned.getSpans(0, text.length(), TypefaceSpan.class);
-        AnimatedEmojiSpan[] animatedSpans = spanned.getSpans(0, text.length(), AnimatedEmojiSpan.class);
-        Emoji.EmojiSpan[] emojiSpans = spanned.getSpans(0, text.length(), Emoji.EmojiSpan.class);
-        ColoredImageSpan[] imageSpans = spanned.getSpans(0, text.length(), ColoredImageSpan.class);
+//        AnimatedEmojiSpan[] animatedSpans = spanned.getSpans(0, text.length(), AnimatedEmojiSpan.class);
+//        Emoji.EmojiSpan[] emojiSpans = spanned.getSpans(0, text.length(), Emoji.EmojiSpan.class);
+        ReplacementSpan[] replacementSpans = spanned.getSpans(0, text.length(), ReplacementSpan.class);
         int add = 0;
-        for (int i = 0; i < emojiSpans.length; ++i) {
-            Emoji.EmojiSpan span = emojiSpans[i];
-            final int start = spanned.getSpanStart(span);
-            final int end = spanned.getSpanEnd(span);
-            add += Math.max(0, span.size - paint.measureText(spanned, start, end));
-        }
-        for (int i = 0; i < imageSpans.length; ++i) {
-            ColoredImageSpan span = imageSpans[i];
-            final int start = spanned.getSpanStart(span);
-            final int end = spanned.getSpanEnd(span);
-            add += Math.max(0, span.getSize(paint, text, start, end, paint.getFontMetricsInt()) - paint.measureText(spanned, start, end));
-        }
-        for (int i = 0; i < animatedSpans.length; ++i) {
-            AnimatedEmojiSpan span = animatedSpans[i];
+//        for (int i = 0; i < emojiSpans.length; ++i) {
+//            Emoji.EmojiSpan span = emojiSpans[i];
+//            final int start = spanned.getSpanStart(span);
+//            final int end = spanned.getSpanEnd(span);
+//            add += Math.max(0, span.size - paint.measureText(spanned, start, end));
+//        }
+        for (int i = 0; i < replacementSpans.length; ++i) {
+            ReplacementSpan span = replacementSpans[i];
             final int start = spanned.getSpanStart(span);
             final int end = spanned.getSpanEnd(span);
             add += Math.max(0, span.getSize(paint, text, start, end, paint.getFontMetricsInt()) - paint.measureText(spanned, start, end));
         }
+//        for (int i = 0; i < animatedSpans.length; ++i) {
+//            AnimatedEmojiSpan span = animatedSpans[i];
+//            final int start = spanned.getSpanStart(span);
+//            final int end = spanned.getSpanEnd(span);
+//            add += Math.max(0, span.getSize(paint, text, start, end, paint.getFontMetricsInt()) - paint.measureText(spanned, start, end));
+//        }
         if (spans == null || spans.length == 0) {
             return paint.measureText(text.toString()) + add;
         }
@@ -375,6 +390,9 @@ public class HintView2 extends View {
 
     // returns max width
     public static int cutInFancyHalf(CharSequence text, TextPaint paint) {
+        if (TextUtils.indexOf(text, '\n') >= 0) {
+            return Integer.MAX_VALUE;
+        }
         int mid = text.length() / 2;
         float leftWidth = 0, rightWidth = 0;
         float prevLeftWidth = 0;
@@ -382,17 +400,13 @@ public class HintView2 extends View {
 
         int dir = -1;
         for (int i = 0; i < 10; ++i) {
-            // Adjust the mid to point to the nearest space on the left
             while (mid > 0 && mid < text.length() && text.charAt(mid) != ' ') {
                 mid += dir;
             }
 
-
             leftWidth = measureCorrectly(text.subSequence(0, mid), paint);
             rightWidth = measureCorrectly(AndroidUtilities.getTrimmedString(text.subSequence(mid, text.length())), paint);
 
-            // If we're not making progress, exit the loop.
-            // (This is a basic way to ensure termination when we can't improve the result.)
             if (leftWidth == prevLeftWidth && rightWidth == prevRightWidth) {
                 break;
             }
@@ -400,25 +414,66 @@ public class HintView2 extends View {
             prevLeftWidth = leftWidth;
             prevRightWidth = rightWidth;
 
-            // If left side is shorter, move midpoint to the right.
             if (leftWidth < rightWidth) {
                 dir = +1;
                 mid += dir;
-            }
-            // If right side is shorter or equal, move midpoint to the left.
-            else {
+            } else {
                 dir = -1;
                 mid += dir;
             }
 
-            // Ensure mid doesn't go out of bounds
             if (mid <= 0 || mid >= text.length()) {
                 break;
             }
         }
 
-        // Return the max width of the two parts.
         return (int) Math.ceil(Math.max(leftWidth, rightWidth));
+    }
+
+    public static CharSequence cutInFancyHalfText(CharSequence text, TextPaint paint) {
+        if (TextUtils.indexOf(text, '\n') >= 0) {
+            return text;
+        }
+        int mid = text.length() / 2;
+        int lastMid = mid;
+        float leftWidth = 0, rightWidth = 0;
+        float prevLeftWidth = 0;
+        float prevRightWidth = Float.MAX_VALUE;
+
+        int dir = -1;
+        for (int i = 0; i < 10; ++i) {
+            while (mid > 0 && mid < text.length() && text.charAt(mid) != ' ') {
+                mid += dir;
+            }
+
+            leftWidth = measureCorrectly(text.subSequence(0, mid), paint);
+            rightWidth = measureCorrectly(AndroidUtilities.getTrimmedString(text.subSequence(mid, text.length())), paint);
+            lastMid = mid;
+
+            if (leftWidth == prevLeftWidth && rightWidth == prevRightWidth) {
+                break;
+            }
+
+            prevLeftWidth = leftWidth;
+            prevRightWidth = rightWidth;
+
+            if (leftWidth < rightWidth) {
+                dir = +1;
+                mid += dir;
+            } else {
+                dir = -1;
+                mid += dir;
+            }
+
+            if (mid <= 0 || mid >= text.length()) {
+                return text;
+            }
+        }
+        return TextUtils.concat(
+            AndroidUtilities.getTrimmedString(text.subSequence(0, lastMid)),
+            "\n",
+            AndroidUtilities.getTrimmedString(text.subSequence(lastMid, text.length()))
+        );
     }
 
     public HintView2 useScale(boolean enable) {
@@ -727,14 +782,25 @@ public class HintView2 extends View {
     private LinearGradient flickerStrokeGradient;
     private long flickerStart;
 
-    protected void drawBgPath(Canvas canvas) {
+    protected void drawBgPath(Canvas canvas, float alpha) {
         if (blurBackgroundPaint != null) {
             canvas.saveLayerAlpha(0, 0, getWidth(), getHeight(), 0xFF, Canvas.ALL_SAVE_FLAG);
             canvas.drawPath(path, blurBackgroundPaint);
             canvas.drawPath(path, blurCutPaint);
             canvas.restore();
         }
+        if (shadowColor != 0) {
+            backgroundPaint.setShadowLayer(
+                shadowRadius,
+                shadowDx,
+                shadowDy,
+                Theme.multAlpha(shadowColor, alpha)
+            );
+        }
+        final int wasAlpha = backgroundPaint.getAlpha();
+        backgroundPaint.setAlpha((int) (wasAlpha * alpha));
         canvas.drawPath(path, backgroundPaint);
+        backgroundPaint.setAlpha(wasAlpha);
         if (flicker) {
             final int delay = 4, duration = 1000;
             final int gradientWidth = dp(64);
@@ -814,7 +880,6 @@ public class HintView2 extends View {
         }
 
         updateBlurBounds();
-        final int wasAlpha = backgroundPaint.getAlpha();
         AndroidUtilities.rectTmp.set(bounds);
         AndroidUtilities.rectTmp.inset(-arrowHeight, -arrowHeight);
         float backgroundAlpha = alpha;
@@ -822,9 +887,7 @@ public class HintView2 extends View {
             backgroundAlpha *= (1f - blurAlpha);
             blurBackgroundPaint.setAlpha((int) (0xFF * alpha));
         }
-        backgroundPaint.setAlpha((int) (wasAlpha * backgroundAlpha));
-        drawBgPath(canvas);
-        backgroundPaint.setAlpha(wasAlpha);
+        drawBgPath(canvas, backgroundAlpha);
 
         if (selectorDrawable != null) {
             selectorDrawable.setAlpha((int) (0xFF * alpha));
@@ -896,11 +959,7 @@ public class HintView2 extends View {
         float arrowXY;
         final float r = Math.min(rounding, Math.min(width / 2, height / 2));
         if (direction == DIRECTION_TOP || direction == DIRECTION_BOTTOM) {
-            if (roundWithCornerEffect) {
-                arrowXY = lerp(getPaddingLeft(), getMeasuredWidth() - getPaddingRight(), joint);
-            } else {
-                arrowXY = lerp(getPaddingLeft() + r + arrowHalfWidth, getMeasuredWidth() - getPaddingRight() - r - arrowHalfWidth, joint);
-            }
+            arrowXY = lerp(getPaddingLeft(), getMeasuredWidth() - getPaddingRight(), joint);
             arrowXY = Utilities.clamp(arrowXY + jointTranslate, getMeasuredWidth() - getPaddingRight(), getPaddingLeft());
             float left = Math.max(getPaddingLeft(), arrowXY - width / 2f);
             float right = Math.min(left + width, getMeasuredWidth() - getPaddingRight());
@@ -912,11 +971,7 @@ public class HintView2 extends View {
                 bounds.set(left, getMeasuredHeight() - arrowHeight - getPaddingBottom() - height, right, getMeasuredHeight() - arrowHeight - getPaddingBottom());
             }
         } else {
-            if (roundWithCornerEffect) {
-                arrowXY = lerp(getPaddingTop(), getMeasuredHeight() - getPaddingBottom(), joint);
-            } else {
-                arrowXY = lerp(getPaddingTop() + r + arrowHalfWidth, getMeasuredHeight() - getPaddingBottom() - r - arrowHalfWidth, joint);
-            }
+            arrowXY = lerp(getPaddingTop(), getMeasuredHeight() - getPaddingBottom(), joint);
             arrowXY = Utilities.clamp(arrowXY + jointTranslate, getMeasuredHeight() - getPaddingBottom(), getPaddingTop());
             float top = Math.max(getPaddingTop(), arrowXY - height / 2f);
             float bottom = Math.min(top + height, getMeasuredHeight() - getPaddingBottom());

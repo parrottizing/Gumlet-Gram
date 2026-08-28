@@ -372,7 +372,6 @@ public:
     
     ~VideoStreamingDecoderState() {
         if (_codecContext) {
-            avcodec_close(_codecContext);
             avcodec_free_context(&_codecContext);
         }
         if (_codecParameters) {
@@ -843,8 +842,8 @@ public:
         }
     }
     
-    bool hasRemainingFrames() const {
-        return !_parsedVideoParts.empty();
+    bool hasRemainingFrames() {
+        return !_parsedVideoParts.empty() || getAudioRemainingMilliseconds() > 0;
     }
 
     int getAudioRemainingMilliseconds() {

@@ -3,7 +3,9 @@ package org.telegram.messenger.utils;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.os.Build;
+import android.os.SystemClock;
 
+import com.google.android.exoplayer2.util.Log;
 import com.google.common.util.concurrent.AtomicDouble;
 
 import org.telegram.messenger.AndroidUtilities;
@@ -441,6 +443,8 @@ public class BitmapsCache {
         return cacheCreated;
     }
 
+    private Bitmap tmpRgbaBitmap;
+
     public int getFrame(int index, Bitmap bitmap) {
         if (error) {
             return FRAME_RESULT_NO_FRAME;
@@ -495,8 +499,20 @@ public class BitmapsCache {
             if (options == null) {
                 options = new BitmapFactory.Options();
             }
-            options.inBitmap = bitmap;
+
+            final boolean singleChannel = bitmap.getConfig() == Bitmap.Config.ALPHA_8;
+            if (singleChannel) {
+                if (tmpRgbaBitmap == null || tmpRgbaBitmap.getWidth() != bitmap.getWidth() || tmpRgbaBitmap.getHeight() != bitmap.getHeight()) {
+                    tmpRgbaBitmap = Bitmap.createBitmap(bitmap.getWidth(), bitmap.getHeight(), Bitmap.Config.ARGB_8888);
+                }
+                options.inBitmap = tmpRgbaBitmap;
+            } else {
+                options.inBitmap = bitmap;
+            }
             BitmapFactory.decodeByteArray(bufferTmp, 0, selectedFrame.frameSize, options);
+            if (singleChannel) {
+                Utilities.extractAlpha(tmpRgbaBitmap, bitmap);
+            }
             options.inBitmap = null;
             return FRAME_RESULT_OK;
         } catch (FileNotFoundException e) {
@@ -595,8 +611,6 @@ public class BitmapsCache {
         int getNextFrame(Bitmap bitmap);
 
         void releaseForGenerateCache();
-
-        Bitmap getFirstFrame(Bitmap bitmap);
     }
 
     public static class Metadata {
