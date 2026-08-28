@@ -17,10 +17,11 @@ public class SummaryPolicyTest {
     }
 
     @Test
-    public void transcriptionPromptDoesNotForcePostSummaryLength() {
+    public void transcriptionPromptRequiresAConciseDirectSummary() {
         String prompt = GemmaSummaryClient.buildTranscriptionPrompt("длинная расшифровка");
         assertTrue(prompt.contains("длинная расшифровка"));
+        assertTrue(prompt.contains("30 словами"));
+        assertTrue(prompt.contains("без вступлений"));
         assertFalse(prompt.contains("8 слов"));
-        assertFalse(prompt.contains("одно очень короткое предложение"));
     }
 }
