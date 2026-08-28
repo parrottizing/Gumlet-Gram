@@ -34,6 +34,7 @@ import org.telegram.messenger.MessagesStorage;
 import org.telegram.messenger.R;
 import org.telegram.messenger.SavedMessagesController;
 import org.telegram.messenger.UserConfig;
+import org.telegram.messenger.UserObject;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.INavigationLayout;
@@ -69,6 +70,8 @@ public class ForumUtilities {
             if (mfChat != null) {
                 return showChannelName ? mfChat.title : LocaleController.formatString(R.string.MonoforumTitle, mfChat.title);
             }
+        } else if (chat != null && chat.linked_monoforum_id != 0) {
+            return showChannelName ? chat.title : LocaleController.formatString(R.string.MonoforumTitle, chat.title);
         }
 
         return chat != null ? chat.title : null;
@@ -115,6 +118,22 @@ public class ForumUtilities {
         } else {
             backupImageView.setAnimatedEmojiDrawable(null);
             backupImageView.setImageDrawable(createTopicDrawable(forumTopic, false));
+        }
+    }
+    public static void setTopicIcon(Context context, ImageReceiver imageReceiver, TLRPC.TL_forumTopic forumTopic, boolean actionBar, boolean largeIcon, Theme.ResourcesProvider resourcesProvider) {
+        if (forumTopic == null || imageReceiver == null) {
+            return;
+        }
+        if (forumTopic.id == 1) {
+            imageReceiver.setImageBitmap(createGeneralTopicDrawable(context, 0.75f, Theme.getColor(Theme.key_actionBarDefaultIcon, resourcesProvider), false, largeIcon));
+        } else if (forumTopic.icon_emoji_id != 0) {
+            if (imageReceiver.getImageDrawable() == null || !(imageReceiver.getImageDrawable() instanceof AnimatedEmojiDrawable) || forumTopic.icon_emoji_id != ((AnimatedEmojiDrawable) imageReceiver.getDrawable()).getDocumentId()) {
+                final AnimatedEmojiDrawable drawable = new AnimatedEmojiDrawable(largeIcon ? AnimatedEmojiDrawable.CACHE_TYPE_FORUM_TOPIC_LARGE : AnimatedEmojiDrawable.CACHE_TYPE_FORUM_TOPIC, UserConfig.selectedAccount, forumTopic.icon_emoji_id);
+                drawable.setColorFilter(actionBar ? new PorterDuffColorFilter(Theme.getColor(Theme.key_actionBarDefaultTitle), PorterDuff.Mode.SRC_IN) : Theme.getAnimatedEmojiColorFilter(resourcesProvider));
+                imageReceiver.setImageBitmap(drawable);
+            }
+        } else {
+            imageReceiver.setImageBitmap(createTopicDrawable(forumTopic, false));
         }
     }
 
@@ -351,6 +370,22 @@ public class ForumUtilities {
         if (topic == null) {
             return;
         }
+
+        if (topicKey.dialogId > 0) {
+            TLRPC.User userLocal = chatActivity.getMessagesController().getUser(topicKey.dialogId);
+            if (!UserObject.isBotForum(userLocal)) {
+                return;
+            }
+
+            ArrayList<MessageObject> messageObjects = new ArrayList<>();
+            messageObjects.add(new MessageObject(chatActivity.getCurrentAccount(), topic.topicStartMessage, false, false));
+            chatActivity.setThreadMessages(messageObjects, null, topic.id, topic.read_inbox_max_id, topic.read_outbox_max_id, topic);
+
+            chatActivity.getMessagesController().setForumLastTopicId(-topicKey.dialogId, topicKey.topicId);
+
+            return;
+        }
+
         TLRPC.Chat chatLocal = chatActivity.getMessagesController().getChat(-topicKey.dialogId);
         if (chatLocal == null) {
             return;
@@ -525,6 +560,8 @@ public class ForumUtilities {
         result.draft = tlMonoForumDialog.draft;
         result.notify_settings = new TLRPC.TL_peerNotifySettings();
         result.from_id = tlMonoForumDialog.peer;
+
+        result.nopaid_messages_exception = tlMonoForumDialog.nopaid_messages_exception;
 
         return result;
     }

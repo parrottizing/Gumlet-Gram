@@ -304,6 +304,9 @@ public abstract class PrivateVideoPreviewDialog extends FrameLayout implements V
 
         layoutParams = (FrameLayout.LayoutParams) titlesLayout.getLayoutParams();
         layoutParams.bottomMargin = padding;
+
+        layoutParams = (FrameLayout.LayoutParams) micIconView.getLayoutParams();
+        layoutParams.bottomMargin = AndroidUtilities.dp(136) + padding;
     }
 
     private void updateTitlesLayout() {
@@ -395,7 +398,7 @@ public abstract class PrivateVideoPreviewDialog extends FrameLayout implements V
                     if (lastBitmap != bitmap) {
                         bitmap.recycle();
                     }
-                    Utilities.blurBitmap(lastBitmap, 7, 1, lastBitmap.getWidth(), lastBitmap.getHeight(), lastBitmap.getRowBytes());
+                    Utilities.blurBitmap(lastBitmap, 7);
                     File file = new File(ApplicationLoader.getFilesDirFixed(), "cthumb" + visibleCameraPage + ".jpg");
                     FileOutputStream stream = new FileOutputStream(file);
                     lastBitmap.compress(Bitmap.CompressFormat.JPEG, 87, stream);
