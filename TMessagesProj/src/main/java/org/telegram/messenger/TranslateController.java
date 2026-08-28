@@ -138,7 +138,7 @@ public class TranslateController extends BaseController {
             messageObject != null &&
             messageObject.messageOwner != null &&
             (messageObject.messageOwner.summary_from_language != null || gumletChannelPost) &&
-            !messageObject.isOutOwner() &&
+            (!messageObject.isOutOwner() || gumletChannelPost) &&
             !messageObject.isRestrictedMessage &&
             !messageObject.isSponsored() &&
             (

@@ -30,6 +30,7 @@ public final class TTSManager {
     private static final TTSManager INSTANCE = new TTSManager();
 
     private volatile HttpURLConnection connection;
+    private volatile MessageObject loadingMessage;
     private volatile MessageObject playingMessage;
     private volatile File audioFile;
     private volatile int requestId;
@@ -46,12 +47,22 @@ public final class TTSManager {
         }
         stop();
         int id = requestId;
+        loadingMessage = source;
+        notifyLoadingChanged(source);
         EXECUTOR.execute(() -> {
             byte[] pcm = request(text);
             if (pcm != null && id == requestId) {
                 play(pcm, source, context, id);
+            } else {
+                AndroidUtilities.runOnUIThread(() -> clearLoading(source, id));
             }
         });
+    }
+
+    public boolean isLoading(MessageObject message) {
+        MessageObject loading = loadingMessage;
+        return loading != null && message != null && loading.currentAccount == message.currentAccount &&
+                loading.getDialogId() == message.getDialogId() && loading.getId() == message.getId();
     }
 
     private byte[] request(String text) {
@@ -126,6 +137,7 @@ public final class TTSManager {
         } catch (Exception e) {
             FileLog.e("Unable to prepare TTS audio", e);
             file.delete();
+            AndroidUtilities.runOnUIThread(() -> clearLoading(source, id));
             return;
         }
         AndroidUtilities.runOnUIThread(() -> {
@@ -133,6 +145,7 @@ public final class TTSManager {
                 file.delete();
                 return;
             }
+            clearLoading(source, id);
             MessageObject message = createPlayerMessage(source, file, pcm.length);
             audioFile = file;
             playingMessage = message;
@@ -203,6 +216,11 @@ public final class TTSManager {
 
     private void stop() {
         requestId++;
+        MessageObject currentLoading = loadingMessage;
+        loadingMessage = null;
+        if (currentLoading != null) {
+            notifyLoadingChanged(currentLoading);
+        }
         HttpURLConnection currentConnection = connection;
         if (currentConnection != null) {
             currentConnection.disconnect();
@@ -217,6 +235,18 @@ public final class TTSManager {
             audioFile = null;
             currentFile.delete();
         }
+    }
+
+    private void clearLoading(MessageObject source, int id) {
+        if (id != requestId || loadingMessage != source) {
+            return;
+        }
+        loadingMessage = null;
+        notifyLoadingChanged(source);
+    }
+
+    private static void notifyLoadingChanged(MessageObject source) {
+        NotificationCenter.getInstance(source.currentAccount).postNotificationName(NotificationCenter.messageTranslating, source);
     }
 
     public void onDestroy() {

@@ -134,6 +134,7 @@ import org.telegram.messenger.SendMessagesHelper;
 import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.SvgHelper;
 import org.telegram.messenger.TranslateController;
+import org.telegram.messenger.TTSManager;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
@@ -16754,11 +16755,12 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
         }
 
         final TranslateController translateController = MessagesController.getInstance(currentAccount).getTranslateController();
-        final boolean translating = translateController.isTranslating(currentMessageObject);
+        final boolean ttsLoading = TTSManager.getInstance().isLoading(currentMessageObject);
+        final boolean translating = ttsLoading || translateController.isTranslating(currentMessageObject);
         final boolean shouldTranslate = currentMessageObject != null && TranslateController.isTranslatable(currentMessageObject) && translateController.isTranslatingDialog(currentMessageObject.getDialogId());
         final boolean shouldSummarize = currentMessageObject != null && currentMessageObject.messageOwner.summarizedOpen;
         final boolean isFinal = shouldTranslate == (currentMessageObject != null && currentMessageObject.translated) && shouldSummarize == (currentMessageObject != null && currentMessageObject.summarized);
-        if (origin == !isFinal) {
+        if (ttsLoading || origin == !isFinal) {
             if (translationLoadingFloat == null) {
                 translationLoadingFloat = new AnimatedFloat(this, 350, CubicBezierInterpolator.EASE_OUT_QUINT);
             }
@@ -16801,6 +16803,9 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                 }
 
                 int color = getThemedColor(currentMessageObject != null && currentMessageObject.isOutOwner() ? Theme.key_chat_messageLinkOut : Theme.key_chat_messageLinkIn);
+                if (ttsLoading) {
+                    color = getThemedColor(Theme.key_color_purple);
+                }
                 translationLoadingDrawable.setColors(
                     Theme.multAlpha(color, .05f),
                     Theme.multAlpha(color, .15f),
@@ -19639,8 +19644,9 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
         }
 
         MessageObject summaryMessage = getSummaryMessageObject();
-        boolean summaryShown = summaryMessage != null && (summaryMessage.summarized ||
-                summaryMessage.messageOwner.summarizedOpen && TranslateController.isVoiceTranscriptionSummarizable(summaryMessage) && summaryMessage.messageOwner.summaryText != null);
+        boolean summaryShown = summaryMessage != null && (TranslateController.isSummarizable(summaryMessage) && summaryMessage.summarized ||
+                summaryMessage.messageOwner.voiceTranscriptionOpen && summaryMessage.messageOwner.summarizedOpen &&
+                        TranslateController.isVoiceTranscriptionSummarizable(summaryMessage) && summaryMessage.messageOwner.summaryText != null);
         if (summaryShown && (currentPosition == null || currentPosition.minY == 0)) {
             drawSummaryReply = currentPosition == null || currentPosition.minX == 0;
             if (summaryTitle == null) {
@@ -21589,7 +21595,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
     private boolean shouldDrawSummarizeButton() {
         MessageObject summaryMessage = getSummaryMessageObject();
         boolean isSummaryHost = currentPosition == null || currentMessagesGroup != null && currentMessagesGroup.isDocuments && currentPosition.last ||
-                (currentPosition.flags & MessageObject.POSITION_FLAG_BOTTOM) != 0 &&
+                (currentPosition.flags & MessageObject.POSITION_FLAG_TOP) != 0 &&
                 (currentPosition.flags & (currentMessageObject.isOutOwner() ? MessageObject.POSITION_FLAG_LEFT : MessageObject.POSITION_FLAG_RIGHT)) != 0;
         return isSummaryHost && summaryMessage != null && (TranslateController.isSummarizable(summaryMessage) ||
                 TranslateController.isVoiceTranscriptionSummarizable(summaryMessage));

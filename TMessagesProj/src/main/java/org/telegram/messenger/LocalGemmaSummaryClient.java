@@ -32,7 +32,7 @@ public final class LocalGemmaSummaryClient {
     }
 
     public static void summarizeTranscription(String originalText, GemmaSummaryClient.Callback callback) {
-        EXECUTOR.execute(() -> callback.onResult(request(GemmaSummaryClient.buildTranscriptionPrompt(originalText), 512)));
+        EXECUTOR.execute(() -> callback.onResult(request(GemmaSummaryClient.buildTranscriptionPrompt(originalText), 64)));
     }
 
     @Nullable

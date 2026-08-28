@@ -21775,6 +21775,33 @@ public class MessagesController extends BaseController implements NotificationCe
         final boolean scheduled = mode == ChatActivity.MODE_SCHEDULED;
         final boolean quickReplies = mode == ChatActivity.MODE_QUICK_REPLIES;
 
+        ArrayList<MessageObject> postsToSummarize = new ArrayList<>();
+        if (summarizeNewChannelPosts) {
+            for (MessageObject message : messages) {
+                if (TranslateController.isGumletChannelPost(message) && TranslateController.isSummarizable(message) && message.messageOwner.summaryText == null) {
+                    postsToSummarize.add(message);
+                }
+            }
+        }
+        if (!postsToSummarize.isEmpty()) {
+            int[] remaining = {postsToSummarize.size()};
+            for (MessageObject message : postsToSummarize) {
+                getTranslateController().checkTranslation(message, false, true, () -> {
+                    if (--remaining[0] == 0) {
+                        for (MessageObject post : postsToSummarize) {
+                            if (post.messageOwner.summaryText == null) {
+                                return;
+                            }
+                        }
+                        if (updateInterfaceWithMessages(dialogId, messages, mode, false)) {
+                            getNotificationCenter().postNotificationName(NotificationCenter.dialogsNeedReload);
+                        }
+                    }
+                });
+            }
+            return false;
+        }
+
         boolean isEncryptedChat = DialogObject.isEncryptedDialog(dialogId);
         MessageObject lastMessage = null;
         long channelId = 0;
@@ -21822,31 +21849,7 @@ public class MessagesController extends BaseController implements NotificationCe
         if (mode == ChatActivity.MODE_QUICK_REPLIES) {
             QuickRepliesController.getInstance(currentAccount).checkLocalMessages(messages);
         }
-        ArrayList<MessageObject> postsToSummarize = new ArrayList<>();
-        if (summarizeNewChannelPosts) {
-            for (MessageObject message : messages) {
-                if (TranslateController.isGumletChannelPost(message) && TranslateController.isSummarizable(message) && message.messageOwner.summaryText == null) {
-                    postsToSummarize.add(message);
-                }
-            }
-        }
-        if (postsToSummarize.isEmpty()) {
-            getNotificationCenter().postNotificationName(NotificationCenter.didReceiveNewMessages, dialogId, messages, scheduled, mode);
-        } else {
-            int[] remaining = {postsToSummarize.size()};
-            for (MessageObject message : postsToSummarize) {
-                getTranslateController().checkTranslation(message, false, true, () -> {
-                    if (--remaining[0] == 0) {
-                        for (MessageObject post : postsToSummarize) {
-                            if (post.messageOwner.summaryText == null) {
-                                return;
-                            }
-                        }
-                        getNotificationCenter().postNotificationName(NotificationCenter.didReceiveNewMessages, dialogId, messages, scheduled, mode);
-                    }
-                });
-            }
-        }
+        getNotificationCenter().postNotificationName(NotificationCenter.didReceiveNewMessages, dialogId, messages, scheduled, mode);
 
         if (lastMessage == null || scheduled) {
             return false;
