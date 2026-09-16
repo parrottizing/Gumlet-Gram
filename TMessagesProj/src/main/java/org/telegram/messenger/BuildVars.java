@@ -28,11 +28,10 @@ public class BuildVars {
 
     public static int APP_ID = BuildConfig.APP_ID;
     public static String APP_HASH = BuildConfig.APP_HASH;
-    public static String GEMINI_API_KEY = BuildConfig.GEMINI_API_KEY;
-    public static String GROQ_API_KEY = BuildConfig.GROQ_API_KEY;
+    public static String AI_PROXY_URL = BuildConfig.AI_PROXY_URL;
 
     // SafetyNet key for Google Identity SDK, set it to empty to disable
-    public static String SAFETYNET_KEY = "REDACTED_GOOGLE_API_KEY";
+    public static String SAFETYNET_KEY = BuildConfig.SAFETYNET_KEY;
     public static String PLAYSTORE_APP_URL = "https://play.google.com/store/apps/details?id=org.telegram.messenger";
     public static String HUAWEI_STORE_URL = "https://appgallery.huawei.com/app/C101184875";
     public static String GOOGLE_AUTH_CLIENT_ID = "760348033671-81kmi3pi84p11ub8hp9a1funsv0rn2p9.apps.googleusercontent.com";

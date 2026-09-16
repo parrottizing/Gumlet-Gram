@@ -134,6 +134,8 @@ android {
 
         multiDexEnabled true
 
+        manifestPlaceholders = [GOOGLE_MAPS_API_KEY: readSecret('GOOGLE_MAPS_API_KEY', '')]
+
         externalNativeBuild {
             cmake {
                 version '3.10.2'
@@ -143,8 +145,8 @@ android {
 
         buildConfigField "int", "APP_ID", readSecret('TELEGRAM_APP_ID', '4')
         buildConfigField "String", "APP_HASH", quoted(readSecret('TELEGRAM_APP_HASH', ''))
-        buildConfigField "String", "GEMINI_API_KEY", quoted(readSecret('GEMINI_API_KEY', ''))
-        buildConfigField "String", "GROQ_API_KEY", quoted(readSecret('GROQ_API_KEY', ''))
+        buildConfigField "String", "SAFETYNET_KEY", quoted(readSecret('SAFETYNET_KEY', ''))
+        buildConfigField "String", "AI_PROXY_URL", quoted(readSecret('AI_PROXY_URL', ''))
     }
 
     buildTypes {
@@ -249,7 +251,6 @@ android {
 
     namespace 'org.telegram.messenger'
 }
-
 
 def getProps(String propName) {
     def propsFile = rootProject.file('local.properties')

@@ -1,0 +1,36 @@
+{
+  "project_info": {
+    "project_number": "replace-with-public-project-number",
+    "project_id": "replace-with-public-firebase-project",
+    "storage_bucket": "replace-with-public-firebase-bucket"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "replace-with-public-android-app-id",
+        "android_client_info": {
+          "package_name": "com.gumlet.gram"
+        }
+      },
+      "api_key": [
+        {
+          "current_key": "replace-with-public-firebase-api-key"
+        }
+      ]
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "replace-with-public-beta-app-id",
+        "android_client_info": {
+          "package_name": "com.gumlet.gram.beta"
+        }
+      },
+      "api_key": [
+        {
+          "current_key": "replace-with-public-firebase-api-key"
+        }
+      ]
+    }
+  ],
+  "configuration_version": "1"
+}
