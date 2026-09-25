@@ -7,6 +7,7 @@ import android.content.res.Resources;
 import android.icu.text.Collator;
 import android.text.TextUtils;
 import android.util.LongSparseArray;
+import android.util.LruCache;
 import android.util.Pair;
 import android.view.inputmethod.InputMethodInfo;
 import android.view.inputmethod.InputMethodManager;
@@ -161,6 +162,105 @@ public class TranslateController extends BaseController {
         return messageObject != null && messageObject.messageOwner != null &&
                 messageObject.messageOwner.peer_id instanceof TLRPC.TL_peerChannel &&
                 messageObject.messageOwner.post;
+    }
+
+    public static boolean needsChannelSummary(MessageObject message) {
+        return isGumletChannelPost(message) && isSummarizable(message) &&
+                message.getId() > MessagesController.getMainSettings(message.currentAccount).getInt(
+                        "channel_summary_start_" + message.getDialogId(), Integer.MAX_VALUE) &&
+                (message.messageOwner.summaryText == null || TextUtils.isEmpty(message.messageOwner.summaryText.text));
+    }
+
+    // The first snapshot is existing history, not a queue of new posts to summarize.
+    public void registerChannelHistory(List<MessageObject> messages) {
+        HashMap<Long, Integer> newest = new HashMap<>();
+        for (MessageObject message : messages) {
+            if (isGumletChannelPost(message)) {
+                long dialogId = message.getDialogId();
+                newest.put(dialogId, Math.max(newest.getOrDefault(dialogId, 0), message.getId()));
+            }
+        }
+        android.content.SharedPreferences settings = messagesController.getMainSettings();
+        android.content.SharedPreferences.Editor editor = settings.edit();
+        for (Long dialogId : newest.keySet()) {
+            String key = "channel_summary_start_" + dialogId;
+            TLRPC.Chat chat = messagesController.getChat(-dialogId);
+            if (chat != null && ChatObject.isNotInChat(chat)) {
+                editor.remove(key);
+            } else if (!settings.contains(key)) {
+                TLRPC.Dialog dialog = messagesController.dialogs_dict.get(dialogId);
+                editor.putInt(key, dialog != null && dialog.top_message > 0 ? dialog.top_message : newest.get(dialogId));
+            }
+        }
+        editor.apply();
+    }
+
+    // Publish ready history immediately; each new post completes independently in the background.
+    public ArrayList<MessageObject> visibleChannelPosts(List<MessageObject> messages, Utilities.Callback<MessageObject> ready) {
+        registerChannelHistory(messages);
+        ArrayList<MessageObject> visible = new ArrayList<>();
+        HashSet<Long> groups = new HashSet<>();
+        for (MessageObject message : messages) {
+            ArrayList<MessageObject> post = new ArrayList<>();
+            if (message.hasValidGroupId()) {
+                if (!groups.add(message.getGroupId())) continue;
+                // ponytail: scan the bounded message page; index groups if import-sized batches are added.
+                for (MessageObject member : messages) {
+                    if (member.getDialogId() == message.getDialogId() && member.getGroupId() == message.getGroupId()) post.add(member);
+                }
+            } else {
+                post.add(message);
+            }
+            boolean[] collecting = {true};
+            if (!deferChannelPosts(post, () -> {
+                if (collecting[0]) {
+                    visible.addAll(post);
+                } else {
+                    for (MessageObject member : post) ready.run(member);
+                }
+            })) {
+                visible.addAll(post);
+            }
+            collecting[0] = false;
+        }
+        return visible;
+    }
+
+    public boolean deferChannelPosts(List<MessageObject> messages, Runnable ready) {
+        ArrayList<MessageObject> pending = new ArrayList<>();
+        for (MessageObject message : messages) {
+            if (needsChannelSummary(message)) {
+                pending.add(message);
+            } else if (isGumletChannelPost(message) && message.messageOwner.summaryText != null &&
+                    !TextUtils.isEmpty(message.messageOwner.summaryText.text)) {
+                message.messageOwner.summarizedOpen = true;
+                message.updateTranslation(true);
+            }
+        }
+        if (pending.isEmpty()) {
+            return false;
+        }
+        final int generation = summaryGeneration;
+        int[] remaining = {pending.size()};
+        for (MessageObject message : pending) {
+            checkTranslation(message, false, true, () -> {
+                if (generation != summaryGeneration || --remaining[0] != 0) {
+                    return;
+                }
+                for (MessageObject post : pending) {
+                    if (needsChannelSummary(post)) {
+                        AndroidUtilities.runOnUIThread(() -> {
+                            if (generation == summaryGeneration && !deferChannelPosts(messages, ready)) {
+                                ready.run();
+                            }
+                        }, 30_000);
+                        return;
+                    }
+                }
+                ready.run();
+            });
+        }
+        return true;
     }
 
     public static boolean isVoiceTranscriptionSummarizable(MessageObject messageObject) {
@@ -597,8 +697,8 @@ public class TranslateController extends BaseController {
         final long dialogId = messageObject.getDialogId();
 
         autoSummarize = autoSummarize && isGumletChannelPost(messageObject) && isSummarizable(messageObject);
-        if (autoSummarize &&
-                messageObject.messageOwner.summaryText == null && !messageObject.messageOwner.summarizedOpen) {
+        if (autoSummarize && (messageObject.messageOwner.summaryText == null || TextUtils.isEmpty(messageObject.messageOwner.summaryText.text))) {
+            messageObject.messageOwner.summaryText = null;
             messageObject.messageOwner.summarizedOpen = true;
             if (SummaryPolicy.isAdvertisement(messageObject.messageOwner.message)) {
                 TLRPC.TL_textWithEntities summary = new TLRPC.TL_textWithEntities();
@@ -610,7 +710,7 @@ public class TranslateController extends BaseController {
             getMessagesStorage().updateMessageCustomParams(dialogId, messageObject.messageOwner);
         }
 
-        if (autoSummarize && messageObject.messageOwner.summarizedOpen && messageObject.messageOwner.summaryText == null && !isTranslatingDialog(messageObject.getDialogId())) {
+        if (autoSummarize && messageObject.messageOwner.summarizedOpen && messageObject.messageOwner.summaryText == null) {
             final MessageObject finalMessageObject = messageObject;
             pushToSummarize(finalMessageObject, null, (text) -> {
                 finalMessageObject.messageOwner.summaryText = text;
@@ -870,6 +970,16 @@ public class TranslateController extends BaseController {
 
 
     public void cleanup() {
+        android.content.SharedPreferences settings = messagesController.getMainSettings();
+        android.content.SharedPreferences.Editor editor = settings.edit();
+        for (String key : settings.getAll().keySet()) {
+            if (key.startsWith("channel_summary_start_")) editor.remove(key);
+        }
+        editor.apply();
+        summaryGeneration++;
+        summaryResults.evictAll();
+        summaryCallbacks.clear();
+        loadingSummarizations.clear();
         cancelAllTranslations();
         resetTranslatingDialogsCache();
 
@@ -1004,6 +1114,10 @@ public class TranslateController extends BaseController {
     private final HashMap<Long, ArrayList<PendingTranslation>> pendingTranscriptionsTranslations = new HashMap<>();
 
     private final HashSet<Integer> loadingSummarizations = new HashSet<>();
+    private final HashMap<String, ArrayList<Utilities.Callback<TLRPC.TL_textWithEntities>>> summaryCallbacks = new HashMap<>();
+    private final LruCache<String, TLRPC.TL_textWithEntities> summaryResults = new LruCache<>(256);
+    private int summaryGeneration;
+
 
     public void summarizeVoiceTranscription(MessageObject message, Runnable callback) {
         if (!isVoiceTranscriptionSummarizable(message)) {
@@ -1052,27 +1166,43 @@ public class TranslateController extends BaseController {
         @Nullable String language,
         Utilities.Callback<TLRPC.TL_textWithEntities> callback
     ) {
+        final String key = message.getDialogId() + ":" + message.getId() + ":" + language + ":" + message.messageOwner.message;
+        TLRPC.TL_textWithEntities cached = summaryResults.get(key);
+        if (cached != null) {
+            callback.run(cached);
+            return;
+        }
+        ArrayList<Utilities.Callback<TLRPC.TL_textWithEntities>> callbacks = summaryCallbacks.get(key);
+        if (callbacks != null) {
+            callbacks.add(callback);
+            return;
+        }
+        callbacks = new ArrayList<>();
+        callbacks.add(callback);
+        summaryCallbacks.put(key, callbacks);
+        final int generation = summaryGeneration;
         final int id = Objects.hash(message.getDialogId(), message.getId(), language != null ? 1 : 0);
-        if (loadingSummarizations.contains(id)) return;
-
         loadingSummarizations.add(id);
-
-        if (!GemmaSummaryClient.isConfigured()) {
+        GemmaSummaryClient.summarize(message.messageOwner.message, language, summary -> AndroidUtilities.runOnUIThread(() -> {
+            if (generation != summaryGeneration) {
+                return;
+            }
             loadingSummarizations.remove(id);
-            callback.run(null);
-        } else {
-            GemmaSummaryClient.summarize(message.messageOwner.message, language, summary -> AndroidUtilities.runOnUIThread(() -> {
-                loadingSummarizations.remove(id);
-                if (TextUtils.isEmpty(summary)) {
-                    callback.run(null);
-                    return;
-                }
-                TLRPC.TL_textWithEntities result = new TLRPC.TL_textWithEntities();
+            ArrayList<Utilities.Callback<TLRPC.TL_textWithEntities>> waiting = summaryCallbacks.remove(key);
+            if (waiting == null) {
+                return;
+            }
+            TLRPC.TL_textWithEntities result = null;
+            if (!TextUtils.isEmpty(summary)) {
+                result = new TLRPC.TL_textWithEntities();
                 result.text = summary;
                 result.entities = new ArrayList<>();
-                callback.run(result);
-            }));
-        }
+                summaryResults.put(key, result);
+            }
+            for (Utilities.Callback<TLRPC.TL_textWithEntities> waiter : waiting) {
+                waiter.run(result);
+            }
+        }));
     }
 
     private static class PendingTranslation {

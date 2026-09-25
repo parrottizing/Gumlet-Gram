@@ -23206,7 +23206,10 @@ public class ChatActivity extends BaseFragment implements
             }
         } else if (id == NotificationCenter.replaceMessagesObjects) {
             long did = (long) args[0];
-            final ArrayList<MessageObject> messageObjects = (ArrayList<MessageObject>) args[1];
+            final ArrayList<MessageObject> messageObjects = (did == dialog_id || did == mergeDialogId) ?
+                    getMessagesController().getTranslateController().visibleChannelPosts((ArrayList<MessageObject>) args[1], message ->
+                            didReceivedNotification(id, account, did, new ArrayList<>(Collections.singletonList(message)))) :
+                    (ArrayList<MessageObject>) args[1];
             if (replyingMessageObject != null) {
                 for (int i = 0; i < messageObjects.size(); ++i) {
                     MessageObject messageObject = messageObjects.get(i);

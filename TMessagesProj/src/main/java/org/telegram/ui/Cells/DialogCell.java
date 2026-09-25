@@ -76,6 +76,7 @@ import org.telegram.messenger.LiteMode;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MediaDataController;
 import org.telegram.messenger.MessageObject;
+import org.telegram.messenger.TranslateController;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.MessagesStorage;
 import org.telegram.messenger.NotificationCenter;
@@ -2057,6 +2058,13 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
                         }
                     }
                 }
+            }
+
+            if (draftMessage == null && TranslateController.isGumletChannelPost(message) &&
+                    (TranslateController.needsChannelSummary(message) || message.messageOwner.summaryText != null)) {
+                messageString = TranslateController.needsChannelSummary(message) ? "" : message.messageOwner.summaryText.text;
+                thumbsCount = 0;
+                drawForwardIcon = false;
             }
 
             if (!drawForwardIcon && !isFolderCell() && !isForumCell() && !isDialogFolder() && draftMessage == null && message != null && message.messageOwner != null && message.messageOwner.action instanceof TLRPC.TL_messageActionStarGift) {
@@ -5579,6 +5587,14 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
                 sb.append(ContactsController.formatName(fromUser.first_name, fromUser.last_name));
                 sb.append(". ");
             }
+        }
+        if (TranslateController.isGumletChannelPost(message) &&
+                    (TranslateController.needsChannelSummary(message) || message.messageOwner.summaryText != null)) {
+            if (!TranslateController.needsChannelSummary(message)) {
+                sb.append(message.messageOwner.summaryText.text);
+            }
+            event.setContentDescription(sb);
+            return;
         }
         if (encryptedChat == null) {
             StringBuilder messageString = new StringBuilder();

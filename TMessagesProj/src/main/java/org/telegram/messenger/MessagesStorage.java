@@ -16432,6 +16432,51 @@ public class MessagesStorage extends BaseController {
         }
     }
 
+    public void getLastVisibleChannelMessage(long dialogId, int beforeId, Utilities.Callback<MessageObject> callback) {
+        storageQueue.postRunnable(() -> {
+            MessageObject previous = null;
+            int cursorId = beforeId;
+            try {
+                while (previous == null) {
+                    SQLiteCursor cursor = database.queryFinalized(
+                            "SELECT data, custom_params, mid FROM messages_v2 WHERE uid = ? AND mid < ? ORDER BY mid DESC LIMIT 100",
+                            dialogId, cursorId);
+                    int rows = 0;
+                    try {
+                        while (cursor.next()) {
+                            rows++;
+                            cursorId = cursor.intValue(2);
+                            NativeByteBuffer data = cursor.byteBufferValue(0);
+                            if (data == null) continue;
+                            TLRPC.Message message = TLRPC.Message.TLdeserialize(data, data.readInt32(false), false);
+                            if (message != null) message.readAttachPath(data, getUserConfig().clientUserId);
+                            data.reuse();
+                            if (message == null) continue;
+                            message.dialog_id = dialogId;
+                            NativeByteBuffer params = cursor.byteBufferValue(1);
+                            if (params != null) {
+                                MessageCustomParamsHelper.readLocalParams(message, params);
+                                params.reuse();
+                            }
+                            MessageObject candidate = new MessageObject(currentAccount, message, false, false);
+                            if (!TranslateController.needsChannelSummary(candidate)) {
+                                previous = candidate;
+                                break;
+                            }
+                        }
+                    } finally {
+                        cursor.dispose();
+                    }
+                    if (rows < 100 || cursorId <= 0) break;
+                }
+            } catch (Exception e) {
+                checkSQLException(e);
+            }
+            MessageObject result = previous;
+            AndroidUtilities.runOnUIThread(() -> callback.run(result));
+        });
+    }
+
     public void getDialogs(int folderId, int offset, int count, boolean loadDraftsPeersAndFolders) {
         long[] draftsDialogIds;
         if (loadDraftsPeersAndFolders) {
@@ -16481,7 +16526,7 @@ public class MessagesStorage extends BaseController {
                     }
 
                     ArrayList<Pair<Long, Long>> dialogsToLoadGroupMessages = new ArrayList<>();
-                    cursor = database.queryFinalized(String.format(Locale.US, "SELECT d.did, d.last_mid, d.unread_count, d.date, m.data, m.read_state, m.mid, m.send_state, s.flags, m.date, d.pts, d.inbox_max, d.outbox_max, m.replydata, d.pinned, d.unread_count_i, d.flags, d.folder_id, d.data, d.unread_reactions, d.last_mid_group, d.ttl_period, d.unread_poll_votes FROM dialogs as d LEFT JOIN messages_v2 as m ON d.last_mid = m.mid AND d.did = m.uid AND d.last_mid_group IS NULL LEFT JOIN dialog_settings as s ON d.did = s.did WHERE d.folder_id = %d ORDER BY d.pinned DESC, d.date DESC LIMIT %d,%d", fid, off, cnt));
+                    cursor = database.queryFinalized(String.format(Locale.US, "SELECT d.did, d.last_mid, d.unread_count, d.date, m.data, m.read_state, m.mid, m.send_state, s.flags, m.date, d.pts, d.inbox_max, d.outbox_max, m.replydata, d.pinned, d.unread_count_i, d.flags, d.folder_id, d.data, d.unread_reactions, d.last_mid_group, d.ttl_period, d.unread_poll_votes, m.custom_params FROM dialogs as d LEFT JOIN messages_v2 as m ON d.last_mid = m.mid AND d.did = m.uid AND d.last_mid_group IS NULL LEFT JOIN dialog_settings as s ON d.did = s.did WHERE d.folder_id = %d ORDER BY d.pinned DESC, d.date DESC LIMIT %d,%d", fid, off, cnt));
                     while (cursor.next()) {
                         long dialogId = cursor.longValue(0);
                         TLRPC.Dialog dialog;
@@ -16558,6 +16603,11 @@ public class MessagesStorage extends BaseController {
                                 }
                                 message.send_state = cursor.intValue(7);
                                 message.dialog_id = dialog.id;
+                                NativeByteBuffer customParams = cursor.byteBufferValue(23);
+                                if (customParams != null) {
+                                    MessageCustomParamsHelper.readLocalParams(message, customParams);
+                                    customParams.reuse();
+                                }
                                 dialogs.messages.add(message);
 
                                 addUsersAndChatsFromMessage(message, usersToLoad, chatsToLoad, emojiToLoad);
@@ -16621,7 +16671,7 @@ public class MessagesStorage extends BaseController {
                                 whereClause.append(" OR ");
                             }
                         }
-                        cursor = database.queryFinalized(String.format(Locale.US, "SELECT uid, data, read_state, mid, send_state, date, replydata, group_id FROM messages_v2 WHERE %s ORDER BY date DESC", whereClause));
+                        cursor = database.queryFinalized(String.format(Locale.US, "SELECT uid, data, read_state, mid, send_state, date, replydata, group_id, custom_params FROM messages_v2 WHERE %s ORDER BY date DESC", whereClause));
                         int COUNT = 0;
                         while (cursor.next()) {
                             COUNT++;
@@ -16651,6 +16701,11 @@ public class MessagesStorage extends BaseController {
                                     }
                                     message.send_state = cursor.intValue(4);
                                     message.dialog_id = did;
+                                    NativeByteBuffer customParams = cursor.byteBufferValue(8);
+                                    if (customParams != null) {
+                                        MessageCustomParamsHelper.readLocalParams(message, customParams);
+                                        customParams.reuse();
+                                    }
                                     dialogs.messages.add(message);
 
                                     addUsersAndChatsFromMessage(message, usersToLoad, chatsToLoad, null);

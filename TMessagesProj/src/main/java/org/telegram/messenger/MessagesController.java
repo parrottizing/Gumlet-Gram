@@ -2221,6 +2221,7 @@ public class MessagesController extends BaseController implements NotificationCe
             }
 
             AndroidUtilities.runOnUIThread(() -> {
+                Runnable applyFilters = () -> {
                 if (remote != 2) {
                     dialogFilters = filters;
                     dialogFiltersById.clear();
@@ -2236,8 +2237,6 @@ public class MessagesController extends BaseController implements NotificationCe
                         }
                         return 0;
                     });
-                    putUsers(users, true);
-                    putChats(chats, true);
                     dialogFiltersLoaded = true;
                     getNotificationCenter().postNotificationName(NotificationCenter.dialogFiltersUpdated);
                     if (remote == 0) {
@@ -2400,6 +2399,14 @@ public class MessagesController extends BaseController implements NotificationCe
 
                 if (onDone != null) {
                     onDone.run();
+                }
+                };
+                if (remote == 2) {
+                    applyFilters.run();
+                } else {
+                    putUsers(users, true);
+                    putChats(chats, true);
+                    prepareDialogPreviews(new_dialogs_dict, new_dialogMessage, applyFilters);
                 }
             });
         });
@@ -10036,6 +10043,9 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     protected void deleteDialog(long did, int first, int onlyHistory, int max_id, boolean revoke, TLRPC.InputPeer peer, long taskId) {
+        if (onlyHistory == 0) {
+            getMainSettings().edit().remove("channel_summary_start_" + did).apply();
+        }
         if (onlyHistory == 2) {
             if (did == getUserConfig().getClientUserId()) {
                 getSavedMessagesController().deleteAllDialogs();
@@ -12160,7 +12170,26 @@ public class MessagesController extends BaseController implements NotificationCe
                     if (!needProcess) {
                         getNotificationCenter().postNotificationName(NotificationCenter.messagesDidLoadWithoutProcess, classGuid, resCount, isCache, isEnd, last_message_id);
                     } else {
-                        getNotificationCenter().postNotificationName(NotificationCenter.messagesDidLoad, dialogId, count, objects, isCache, finalFirst_unread_final, last_message_id, unread_count, last_date, load_type, isEnd, classGuid, loadIndex, max_id, mentionsCount, mode);
+                        ArrayList<MessageObject> visible = mode == ChatActivity.MODE_SCHEDULED ? objects :
+                                getTranslateController().visibleChannelPosts(objects, message ->
+                                        updateInterfaceWithMessages(dialogId, new ArrayList<>(Collections.singletonList(message)), mode));
+                        if (visible.isEmpty() && !objects.isEmpty()) {
+                            int oldestPending = Integer.MAX_VALUE;
+                            for (MessageObject message : objects) oldestPending = Math.min(oldestPending, message.getId());
+                            loadMessages(dialogId, mergeDialogId, false, count, oldestPending, 0, true, 0,
+                                    classGuid, LOAD_BACKWARD, 0, mode, threadMessageId, 0, loadIndex, isTopic);
+                            return;
+                        }
+                        int visibleLastMessage = last_message_id;
+                        for (MessageObject message : objects) {
+                            if (message.getId() == last_message_id && !visible.contains(message)) {
+                                visibleLastMessage = 0;
+                                for (MessageObject shown : visible) visibleLastMessage = Math.max(visibleLastMessage, shown.getId());
+                                break;
+                            }
+                        }
+                        int visibleCount = Math.max(0, count - objects.size() + visible.size());
+                        getNotificationCenter().postNotificationName(NotificationCenter.messagesDidLoad, dialogId, visibleCount, visible, isCache, finalFirst_unread_final, visibleLastMessage, unread_count, last_date, load_type, isEnd, classGuid, loadIndex, max_id, mentionsCount, mode);
                     }
                 }, classGuid, loaderLogger);
             } else {
@@ -12964,6 +12993,7 @@ public class MessagesController extends BaseController implements NotificationCe
 
                 putUsers(dialogsRes.users, false);
                 putChats(dialogsRes.chats, false);
+                prepareDialogPreviews(new_dialogs_dict, new_dialogMessage, () -> {
 
                 for (int a = 0; a < allDialogs.size(); a++) {
                     TLRPC.Dialog oldDialog = allDialogs.get(a);
@@ -13032,6 +13062,7 @@ public class MessagesController extends BaseController implements NotificationCe
                     loadDialogs(0, 0, 100, false);
                 }
                 getNotificationCenter().postNotificationName(NotificationCenter.dialogsNeedReload);
+                });
             });
         });
     }
@@ -13514,6 +13545,7 @@ public class MessagesController extends BaseController implements NotificationCe
                 }
                 putUsers(dialogsRes.users, loadType == DIALOGS_LOAD_TYPE_CACHE);
                 putChats(dialogsRes.chats, loadType == DIALOGS_LOAD_TYPE_CACHE);
+                prepareDialogPreviews(new_dialogs_dict, new_dialogMessage, () -> {
                 if (fullUsers != null) {
                     for (int i = 0; i < fullUsers.size(); i++) {
                         long did = fullUsers.get(i).id;
@@ -13729,6 +13761,7 @@ public class MessagesController extends BaseController implements NotificationCe
                         }
                     }
                 }
+                });
             });
         });
     }
@@ -14088,6 +14121,7 @@ public class MessagesController extends BaseController implements NotificationCe
             AndroidUtilities.runOnUIThread(() -> {
                 putUsers(dialogsRes.users, true);
                 putChats(dialogsRes.chats, true);
+                prepareDialogPreviews(new_dialogs_dict, new_dialogMessage, () -> {
 
                 for (int a = 0; a < new_dialogs_dict.size(); a++) {
                     long key = new_dialogs_dict.keyAt(a);
@@ -14261,8 +14295,75 @@ public class MessagesController extends BaseController implements NotificationCe
                 sortDialogs(null);
                 getNotificationCenter().postNotificationName(NotificationCenter.dialogsNeedReload);
                 getNotificationsController().processDialogsUpdateRead(dialogsToUpdate);
+                });
             });
         });
+    }
+
+    private void prepareDialogPreviews(LongSparseArray<TLRPC.Dialog> dialogs,
+                                       LongSparseArray<ArrayList<MessageObject>> previews, Runnable publish) {
+        ArrayList<MessageObject> all = new ArrayList<>();
+        for (int i = 0; i < previews.size(); i++) {
+            ArrayList<MessageObject> messages = previews.valueAt(i);
+            if (messages != null) all.addAll(messages);
+        }
+        getTranslateController().registerChannelHistory(all);
+
+        ArrayList<ArrayList<MessageObject>> pending = new ArrayList<>();
+        for (int i = 0; i < previews.size(); i++) {
+            ArrayList<MessageObject> messages = previews.valueAt(i);
+            if (messages == null) continue;
+            for (MessageObject message : messages) {
+                if (TranslateController.needsChannelSummary(message)) {
+                    pending.add(messages);
+                    break;
+                }
+            }
+        }
+        if (pending.isEmpty()) {
+            publish.run();
+            return;
+        }
+
+        int[] remaining = {pending.size()};
+        for (ArrayList<MessageObject> post : pending) {
+            long dialogId = post.get(0).getDialogId();
+            int oldestId = Integer.MAX_VALUE;
+            for (MessageObject message : post) oldestId = Math.min(oldestId, message.getId());
+            MessageObject previous = null;
+            ArrayList<MessageObject> shown = dialogMessage.get(dialogId);
+            if (shown != null) {
+                for (MessageObject message : shown) {
+                    if (message.getId() < oldestId && !TranslateController.needsChannelSummary(message) &&
+                            (previous == null || message.getId() > previous.getId())) previous = message;
+                }
+            }
+            Utilities.Callback<MessageObject> usePrevious = visible -> {
+                TLRPC.Dialog dialog = dialogs.get(dialogId);
+                if (dialog != null) {
+                    if (visible == null) {
+                        dialogs.remove(dialogId);
+                    } else {
+                        previews.put(dialogId, new ArrayList<>(Collections.singletonList(visible)));
+                        dialog.top_message = visible.getId();
+                        dialog.last_message_date = visible.messageOwner.date;
+                    }
+                }
+                if (--remaining[0] == 0) {
+                    publish.run();
+                    for (ArrayList<MessageObject> held : pending) {
+                        Runnable reveal = () -> {
+                            if (updateInterfaceWithMessages(held.get(0).getDialogId(), new ArrayList<>(held), 0)) {
+                                getNotificationCenter().postNotificationName(NotificationCenter.dialogsNeedReload);
+                            }
+                        };
+                        if (!getTranslateController().deferChannelPosts(held, reveal)) reveal.run();
+                    }
+                }
+            };
+            if (previous != null) usePrevious.run(previous);
+            else getMessagesStorage().getLastVisibleChannelMessage(dialogId, oldestId, usePrevious);
+        }
     }
 
     private int messagesMaxDate(ArrayList<MessageObject> messages) {
@@ -17394,6 +17495,11 @@ public class MessagesController extends BaseController implements NotificationCe
                 }
 
                 getMessagesStorage().getStorageQueue().postRunnable(() -> AndroidUtilities.runOnUIThread(() -> {
+                    putUsers(res.users, false);
+                    putChats(res.chats, false);
+                    LongSparseArray<TLRPC.Dialog> previewDialogs = new LongSparseArray<>();
+                    for (TLRPC.Dialog dialog : newPinnedDialogs) previewDialogs.put(dialog.id, dialog);
+                    prepareDialogPreviews(previewDialogs, new_dialogMessage, () -> {
                     loadingPinnedDialogs.delete(folderId);
                     applyDialogsNotificationsSettings(newPinnedDialogs);
                     boolean changed = false;
@@ -17432,12 +17538,11 @@ public class MessagesController extends BaseController implements NotificationCe
 
                     ArrayList<Long> pinnedDialogs = new ArrayList<>();
                     if (!newPinnedDialogs.isEmpty()) {
-                        putUsers(res.users, false);
-                        putChats(res.chats, false);
                         ArrayList<Long> dids = new ArrayList<>();
                         ArrayList<Integer> pinned = new ArrayList<>();
                         for (int a = 0, N = newPinnedDialogs.size(); a < N; a++) {
                             TLRPC.Dialog dialog = newPinnedDialogs.get(a);
+                            if (previewDialogs.get(dialog.id) == null && new_dialogMessage.get(dialog.id) != null) continue;
                             dialog.pinnedNum = (N - a) + maxPinnedNum;
 
                             pinnedDialogs.add(dialog.id);
@@ -17489,6 +17594,7 @@ public class MessagesController extends BaseController implements NotificationCe
                     getMessagesStorage().putDialogs(toCache, 1);
                     getUserConfig().setPinnedDialogsLoaded(folderId, true);
                     getUserConfig().saveConfig(false);
+                    });
                 }));
             }
         });
@@ -20778,7 +20884,7 @@ public class MessagesController extends BaseController implements NotificationCe
                 for (int a = 0, size = messagesFinal.size(); a < size; a++) {
                     long key = messagesFinal.keyAt(a);
                     ArrayList<MessageObject> value = messagesFinal.valueAt(a);
-                    if (updateInterfaceWithMessages(key, value, 0, !fromGetDifference)) {
+                    if (updateInterfaceWithMessages(key, value, 0)) {
                         sorted = true;
                     }
                 }
@@ -21765,41 +21871,20 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     public boolean updateInterfaceWithMessages(long dialogId, ArrayList<MessageObject> messages, int mode) {
-        return updateInterfaceWithMessages(dialogId, messages, mode, false);
-    }
-
-    private boolean updateInterfaceWithMessages(long dialogId, ArrayList<MessageObject> messages, int mode, boolean summarizeNewChannelPosts) {
         if (messages == null || messages.isEmpty()) {
             return false;
         }
         final boolean scheduled = mode == ChatActivity.MODE_SCHEDULED;
         final boolean quickReplies = mode == ChatActivity.MODE_QUICK_REPLIES;
-
-        ArrayList<MessageObject> postsToSummarize = new ArrayList<>();
-        if (summarizeNewChannelPosts) {
-            for (MessageObject message : messages) {
-                if (TranslateController.isGumletChannelPost(message) && TranslateController.isSummarizable(message) && message.messageOwner.summaryText == null) {
-                    postsToSummarize.add(message);
+        if (!scheduled && !quickReplies) {
+            messages = getTranslateController().visibleChannelPosts(messages, message -> {
+                if (updateInterfaceWithMessages(dialogId, new ArrayList<>(Collections.singletonList(message)), mode)) {
+                    getNotificationCenter().postNotificationName(NotificationCenter.dialogsNeedReload);
                 }
+            });
+            if (messages.isEmpty()) {
+                return false;
             }
-        }
-        if (!postsToSummarize.isEmpty()) {
-            int[] remaining = {postsToSummarize.size()};
-            for (MessageObject message : postsToSummarize) {
-                getTranslateController().checkTranslation(message, false, true, () -> {
-                    if (--remaining[0] == 0) {
-                        for (MessageObject post : postsToSummarize) {
-                            if (post.messageOwner.summaryText == null) {
-                                return;
-                            }
-                        }
-                        if (updateInterfaceWithMessages(dialogId, messages, mode, false)) {
-                            getNotificationCenter().postNotificationName(NotificationCenter.dialogsNeedReload);
-                        }
-                    }
-                });
-            }
-            return false;
         }
 
         boolean isEncryptedChat = DialogObject.isEncryptedDialog(dialogId);

@@ -9,9 +9,14 @@ import org.json.JSONObject;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLRPC;
 
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.net.HttpURLConnection;
+import java.net.URL;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
@@ -19,6 +24,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public final class TTSManager {
+    private static final String API_URL = "https://generativelanguage.googleapis.com/v1beta/interactions";
+    private static final String MODEL = "gemini-3.1-flash-tts-preview";
     private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor();
     private static final TTSManager INSTANCE = new TTSManager();
 
@@ -35,7 +42,7 @@ public final class TTSManager {
     }
 
     public void readAloud(String text, MessageObject source, Context context) {
-        if (TextUtils.isEmpty(text) || !AiProxyClient.isConfigured()) {
+        if (TextUtils.isEmpty(text) || (!AiProxyClient.isConfigured() && PrivateAiCredentials.get("GEMINI_API_KEY").isEmpty())) {
             return;
         }
         stop();
@@ -59,12 +66,49 @@ public final class TTSManager {
     }
 
     private byte[] request(String text) {
+        HttpURLConnection current = null;
         try {
-            JSONObject payload = new JSONObject().put("text", text);
-            return decodeAudioResponse(AiProxyClient.postJson("/v1/tts", payload));
+            if (AiProxyClient.isConfigured()) {
+                return decodeAudioResponse(AiProxyClient.postJson("/v1/tts", new JSONObject().put("text", text)));
+            }
+            current = (HttpURLConnection) new URL(API_URL).openConnection();
+            connection = current;
+            current.setInstanceFollowRedirects(false);
+            current.setConnectTimeout(20_000);
+            current.setReadTimeout(120_000);
+            current.setRequestMethod("POST");
+            current.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+            current.setRequestProperty("x-goog-api-key", PrivateAiCredentials.get("GEMINI_API_KEY"));
+            current.setRequestProperty("Api-Revision", "2026-05-20");
+            current.setDoOutput(true);
+
+            JSONObject payload = new JSONObject()
+                    .put("model", MODEL)
+                    .put("input", "Прочитай естественно и ясно: " + text)
+                    .put("response_format", new JSONObject().put("type", "audio"))
+                    .put("generation_config", new JSONObject().put("speech_config",
+                            new JSONArray().put(new JSONObject().put("voice", "Kore"))));
+            try (OutputStream output = current.getOutputStream()) {
+                output.write(payload.toString().getBytes(StandardCharsets.UTF_8));
+            }
+
+            int code = current.getResponseCode();
+            String response = read(code >= 200 && code < 300 ? current.getInputStream() : current.getErrorStream());
+            if (code < 200 || code >= 300) {
+                FileLog.e("Gemini 3.1 Flash TTS failed with HTTP " + code);
+                return null;
+            }
+            byte[] audio = decodeAudioResponse(response);
+            FileLog.d("Gemini 3.1 Flash TTS audio received");
+            return audio;
         } catch (Exception e) {
-            FileLog.e("TTS proxy failed", e);
+            FileLog.e("Gemini 3.1 Flash TTS failed", e);
             return null;
+        } finally {
+            connection = null;
+            if (current != null) {
+                current.disconnect();
+            }
         }
     }
 

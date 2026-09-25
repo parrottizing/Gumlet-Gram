@@ -44,3 +44,20 @@ You will require Android Studio 2025.1.4, Android NDK 27.2.12479018 and Android 
 ### Localization
 
 We moved all translations to https://translations.telegram.org/en/android/. Please use it.
+
+### Personal-device voice features
+
+Provider keys are never compiled into the APK. For a personal debug install, keep
+`GEMINI_API_KEY` and `GROQ_API_KEY` in the ignored root `.env`, then provision the
+connected phone once (substitute its ADB serial):
+
+```bash
+python3 Tools/provision-ai-credentials.py --serial YOUR_ADB_SERIAL
+```
+
+This stores only those two keys in the app's private `no_backup/ai.properties`
+with owner-only permissions. They survive app upgrades, are excluded from Android
+backup, and are removed when app data is cleared. Restart the app after provisioning.
+The `.env` is not modified.
+Release installs can use the existing `AI_PROXY_URL` backend configuration instead;
+ADB `run-as` provisioning requires a debuggable personal build.

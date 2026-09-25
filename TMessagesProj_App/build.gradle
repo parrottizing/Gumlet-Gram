@@ -155,6 +155,7 @@ android {
     }
 
     defaultConfig.versionCode = Integer.parseInt(APP_VERSION_CODE)
+    defaultConfig.manifestPlaceholders = [GOOGLE_MAPS_API_KEY: System.getenv('GOOGLE_MAPS_API_KEY') ?: 'replace-with-restricted-maps-key']
 
     applicationVariants.all { variant ->
         variant.outputs.all { output ->

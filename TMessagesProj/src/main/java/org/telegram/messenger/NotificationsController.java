@@ -1018,6 +1018,22 @@ public class NotificationsController extends BaseController implements Notificat
     }
 
     public void processNewMessages(ArrayList<MessageObject> messageObjects, boolean isLast, boolean isFcm, CountDownLatch countDownLatch) {
+        if (messageObjects != null && !isFcm) {
+            for (MessageObject message : messageObjects) {
+                if (TranslateController.needsChannelSummary(message)) {
+                    AndroidUtilities.runOnUIThread(() -> {
+                        Runnable publish = () -> processNewMessages(messageObjects, isLast, false, null);
+                        if (!getMessagesController().getTranslateController().deferChannelPosts(messageObjects, publish)) {
+                            publish.run();
+                        }
+                    });
+                    if (countDownLatch != null) {
+                        countDownLatch.countDown();
+                    }
+                    return;
+                }
+            }
+        }
         if (BuildVars.LOGS_ENABLED) {
             FileLog.d("NotificationsController: processNewMessages msgs.size()=" + (messageObjects == null ? "null" : messageObjects.size()) + " isLast=" + isLast + " isFcm=" + isFcm + ")");
         }
@@ -1797,6 +1813,9 @@ public class NotificationsController extends BaseController implements Notificat
     }
 
     public String getShortStringForMessage(MessageObject messageObject, String[] userName, boolean[] preview) {
+        if (TranslateController.needsChannelSummary(messageObject)) {
+            return null;
+        }
         if (AndroidUtilities.needShowPasscode() || SharedConfig.isWaitingForPasscodeEnter) {
             return LocaleController.getString(R.string.NotificationHiddenMessage);
         }
@@ -2483,6 +2502,9 @@ public class NotificationsController extends BaseController implements Notificat
     }
 
     private String getStringForMessage(MessageObject messageObject, boolean shortMessage, boolean[] text, boolean[] preview) {
+        if (TranslateController.needsChannelSummary(messageObject)) {
+            return null;
+        }
         if (AndroidUtilities.needShowPasscode() || SharedConfig.isWaitingForPasscodeEnter) {
             return LocaleController.getString(R.string.YouHaveNewMessage);
         }
