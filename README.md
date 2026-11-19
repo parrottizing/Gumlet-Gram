@@ -47,6 +47,8 @@ We moved all translations to https://translations.telegram.org/en/android/. Plea
 
 ### Personal-device voice features
 
+Build this fork with JDK 21, required by the existing LiteRT-LM dependency.
+
 Provider keys are never compiled into the APK. For a personal debug install, keep
 `GEMINI_API_KEY` and `GROQ_API_KEY` in the ignored root `.env`, then provision the
 connected phone once (substitute its ADB serial):
