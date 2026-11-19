@@ -56,7 +56,7 @@ import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Cells.ChatMessageCell;
 import org.telegram.ui.Components.blur3.BlurredBackgroundDrawableViewFactory;
 import org.telegram.ui.Components.blur3.drawable.color.impl.BlurredBackgroundProviderImpl;
-import org.telegram.ui.Components.blur3.source.BlurredBackgroundSourceBitmap;
+import org.telegram.utils.glass.source.GlassSourceBitmap;
 import org.telegram.ui.Components.blur3.utils.Blur3Utils;
 import org.telegram.ui.Components.chat.ViewPositionWatcher;
 
@@ -72,7 +72,7 @@ public class ScrimOptions extends Dialog {
     private Paint blurBitmapPaint;
     private Matrix blurMatrix;
 
-    private final BlurredBackgroundSourceBitmap iBlur3SourceBitmap;
+    private final GlassSourceBitmap iBlur3SourceBitmap;
     private final BlurredBackgroundDrawableViewFactory iBlur3Factory;
 
     private float openProgress;
@@ -156,7 +156,7 @@ public class ScrimOptions extends Dialog {
         containerView.setClipToPadding(false);
         windowView.addView(containerView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.FILL));
 
-        iBlur3SourceBitmap = new BlurredBackgroundSourceBitmap();
+        iBlur3SourceBitmap = new GlassSourceBitmap();
         iBlur3Factory = new BlurredBackgroundDrawableViewFactory(iBlur3SourceBitmap);
         iBlur3Factory.setSourceRootView(new ViewPositionWatcher(windowView), windowView);
 
@@ -356,7 +356,9 @@ public class ScrimOptions extends Dialog {
 
             final ColorMatrix colorMatrixOptions = new ColorMatrix();
             colorMatrixOptions.setSaturation(Theme.isCurrentThemeDark() ? 2 : 3);
-            AndroidUtilities.adjustBrightnessColorMatrix(colorMatrixOptions, Theme.isCurrentThemeDark() ? -.2f : -.07f);
+            if (!Theme.isCurrentThemeDark()) {
+                AndroidUtilities.adjustBrightnessColorMatrix(colorMatrixOptions, Theme.isCurrentThemeDark() ? -.2f : -.07f);
+            }
             final Bitmap bitmapOptions = AndroidUtilities.applyColorMatrix(bitmap, colorMatrixOptions);
             bitmapOptions.setHasAlpha(false);
 
