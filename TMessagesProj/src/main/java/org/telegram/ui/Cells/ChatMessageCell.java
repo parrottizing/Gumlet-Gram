@@ -15327,6 +15327,9 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
 
     @Override
     public void didSetImage(ImageReceiver imageReceiver, boolean set, boolean thumb, boolean memCache) {
+        if (set && !thumb && currentMessageObject != null && isAttachedToWindow()) {
+            org.telegram.messenger.ImageAdDetector.check(currentMessageObject);
+        }
         if (currentMessageObject != null && set) {
             if (setCurrentDiceValue(!memCache && !currentMessageObject.wasUnread)) {
                 return;

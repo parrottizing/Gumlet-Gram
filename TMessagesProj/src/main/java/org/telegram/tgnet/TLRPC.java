@@ -59439,6 +59439,8 @@ public class TLRPC {
         public InputQuickReplyShortcut quick_reply_shortcut; //custom
         public long errorAllowedPriceStars; //custom
         public long errorNewPriceStars; //custom
+        public long imageAdCheckedId; //custom
+        public boolean imageAdAdvertisement; //custom
         public boolean summarizedOpen; //custom
         public TL_textWithEntities summaryText; //custom
         public String translatedSummaryLanguage; //custom

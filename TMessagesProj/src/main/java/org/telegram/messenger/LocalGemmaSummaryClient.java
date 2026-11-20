@@ -19,6 +19,9 @@ public final class LocalGemmaSummaryClient {
 
     private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor();
     private static Engine engine;
+    private static final java.util.concurrent.atomic.AtomicInteger pending = new java.util.concurrent.atomic.AtomicInteger();
+
+    static boolean isBusy() { return pending.get() != 0; }
 
     private LocalGemmaSummaryClient() {}
 
@@ -28,11 +31,19 @@ public final class LocalGemmaSummaryClient {
     }
 
     public static void summarize(String originalText, @Nullable String language, GemmaSummaryClient.Callback callback) {
-        EXECUTOR.execute(() -> callback.onResult(request(GemmaSummaryClient.buildPrompt(originalText, language), 64)));
+        pending.incrementAndGet();
+        EXECUTOR.execute(() -> {
+            try { callback.onResult(request(GemmaSummaryClient.buildPrompt(originalText, language), 64)); }
+            finally { pending.decrementAndGet(); }
+        });
     }
 
     public static void summarizeTranscription(String originalText, GemmaSummaryClient.Callback callback) {
-        EXECUTOR.execute(() -> callback.onResult(request(GemmaSummaryClient.buildTranscriptionPrompt(originalText), 64)));
+        pending.incrementAndGet();
+        EXECUTOR.execute(() -> {
+            try { callback.onResult(request(GemmaSummaryClient.buildTranscriptionPrompt(originalText), 64)); }
+            finally { pending.decrementAndGet(); }
+        });
     }
 
     @Nullable

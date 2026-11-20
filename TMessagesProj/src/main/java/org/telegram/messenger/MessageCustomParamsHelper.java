@@ -20,6 +20,7 @@ public class MessageCustomParamsHelper {
             message.voiceTranscription == null &&
             message.translatedVoiceTranscription == null &&
             !message.voiceTranscriptionOpen &&
+            message.imageAdCheckedId == 0 &&
             !message.summarizedOpen &&
             message.summaryText == null &&
             message.translatedSummaryLanguage == null &&
@@ -55,6 +56,8 @@ public class MessageCustomParamsHelper {
         toMessage.errorAllowedPriceStars = fromMessage.errorAllowedPriceStars;
         toMessage.errorNewPriceStars = fromMessage.errorNewPriceStars;
         toMessage.translatedVoiceTranscription = fromMessage.translatedVoiceTranscription;
+        toMessage.imageAdCheckedId = fromMessage.imageAdCheckedId;
+        toMessage.imageAdAdvertisement = fromMessage.imageAdAdvertisement;
         toMessage.summarizedOpen = fromMessage.summarizedOpen;
         toMessage.summaryText = fromMessage.summaryText;
         toMessage.translatedSummaryText = fromMessage.translatedSummaryText;
@@ -121,6 +124,8 @@ public class MessageCustomParamsHelper {
 
             flags = setFlag(flags, FLAG_13, message.translatedRichMessage != null);
             flags = setFlag(flags, FLAG_14, isCommentEncryptionPreparing(message));
+            flags = setFlag(flags, FLAG_15, message.imageAdCheckedId != 0);
+            flags = setFlag(flags, FLAG_16, message.imageAdAdvertisement);
         }
 
         @Override
@@ -173,6 +178,7 @@ public class MessageCustomParamsHelper {
             if (hasFlag(flags, FLAG_13)) {
                 message.translatedRichMessage.serializeToStream(stream);
             }
+            if (hasFlag(flags, FLAG_15)) stream.writeInt64(message.imageAdCheckedId);
         }
 
         @Override
@@ -228,6 +234,8 @@ public class MessageCustomParamsHelper {
             if (hasFlag(flags, FLAG_13)) {
                 message.translatedRichMessage = TL_iv.RichMessage.TLdeserialize(stream, stream.readInt32(exception), exception);
             }
+            message.imageAdCheckedId = hasFlag(flags, FLAG_15) ? stream.readInt64(exception) : 0;
+            message.imageAdAdvertisement = hasFlag(flags, FLAG_16);
         }
 
     }

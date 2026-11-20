@@ -134,6 +134,8 @@ public class TranslateController extends BaseController {
     }
 
     public static boolean isSummarizable(MessageObject messageObject) {
+        if (isGumletChannelPost(messageObject) && messageObject.messageOwner.imageAdAdvertisement
+                && !messageObject.isRestrictedMessage && ImageAdDetector.imageId(messageObject) != 0) return true;
         final boolean gumletChannelPost = isGumletChannelPost(messageObject);
         return (
             messageObject != null &&
@@ -696,6 +698,7 @@ public class TranslateController extends BaseController {
         }
 
         final long dialogId = messageObject.getDialogId();
+        if (onScreen) ImageAdDetector.check(messageObject);
 
         autoSummarize = autoSummarize && isGumletChannelPost(messageObject) && isSummarizable(messageObject);
         if (autoSummarize && (messageObject.messageOwner.summaryText == null || TextUtils.isEmpty(messageObject.messageOwner.summaryText.text))) {
@@ -714,6 +717,10 @@ public class TranslateController extends BaseController {
         if (autoSummarize && messageObject.messageOwner.summarizedOpen && messageObject.messageOwner.summaryText == null) {
             final MessageObject finalMessageObject = messageObject;
             pushToSummarize(finalMessageObject, null, (text) -> {
+                if (finalMessageObject.messageOwner.imageAdAdvertisement) {
+                    if (summaryCallback != null) summaryCallback.run();
+                    return;
+                }
                 finalMessageObject.messageOwner.summaryText = text;
                 if (text == null) {
                     finalMessageObject.messageOwner.summarizedOpen = false;
@@ -803,9 +810,10 @@ public class TranslateController extends BaseController {
                         }
                     });
                 }
-            } else if (finalMessageObject.messageOwner.summarizedOpen) {
+            } else if (finalMessageObject.messageOwner.summarizedOpen && !finalMessageObject.messageOwner.imageAdAdvertisement) {
                 if (finalMessageObject.messageOwner.translatedSummaryText == null || !language.equals(finalMessageObject.messageOwner.translatedSummaryLanguage)) {
                     pushToSummarize(finalMessageObject, language, text -> {
+                        if (finalMessageObject.messageOwner.imageAdAdvertisement) return;
                         finalMessageObject.messageOwner.translatedSummaryLanguage = text != null ? language : null;
                         finalMessageObject.messageOwner.translatedSummaryText = text;
                         if (text == null) {

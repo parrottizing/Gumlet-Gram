@@ -31,6 +31,7 @@ idea {
 repositories {
     mavenCentral()
     google()
+    maven { url "https://jitpack.io"; content { includeGroup "cz.adaptech.tesseract4android" } }
 }
 
 def envProps = new Properties()
@@ -58,6 +59,7 @@ configurations.all {
 }
 
 dependencies {
+    implementation 'cz.adaptech.tesseract4android:tesseract4android:4.9.0'
     implementation 'androidx.core:core:1.16.0'
     implementation 'androidx.palette:palette:1.0.0'
     implementation 'androidx.exifinterface:exifinterface:1.3.6'
