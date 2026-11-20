@@ -19,6 +19,7 @@ import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.DialogObject;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.LocaleController;
+import org.telegram.messenger.MessageCustomParamsHelper;
 import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.MessagesStorage;
@@ -283,9 +284,9 @@ public class ProfileChannelCell extends FrameLayout implements Theme.Colorable {
                 SQLiteCursor cursor = null;
                 try {
                     if (message_id <= 0) {
-                        cursor = storage.getDatabase().queryFinalized("SELECT data, mid FROM messages_v2 WHERE uid = ? ORDER BY mid DESC LIMIT 10", -channel_id);
+                        cursor = storage.getDatabase().queryFinalized("SELECT data, mid, custom_params FROM messages_v2 WHERE uid = ? ORDER BY mid DESC LIMIT 10", -channel_id);
                     } else {
-                        cursor = storage.getDatabase().queryFinalized("SELECT data, mid FROM messages_v2 WHERE uid = ? AND mid <= ? ORDER BY mid DESC LIMIT 10", -channel_id, message_id);
+                        cursor = storage.getDatabase().queryFinalized("SELECT data, mid, custom_params FROM messages_v2 WHERE uid = ? AND mid <= ? ORDER BY mid DESC LIMIT 10", -channel_id, message_id);
                     }
                     ArrayList<Long> usersToLoad = new ArrayList<>();
                     ArrayList<Long> chatsToLoad = new ArrayList<>();
@@ -297,6 +298,14 @@ public class ProfileChannelCell extends FrameLayout implements Theme.Colorable {
                             data.reuse();
                             message.id = cursor.intValue(1);
                             message.dialog_id = -channel_id;
+                            NativeByteBuffer customParams = cursor.byteBufferValue(2);
+                            if (customParams != null) {
+                                try {
+                                    MessageCustomParamsHelper.readLocalParams(message, customParams);
+                                } finally {
+                                    customParams.reuse();
+                                }
+                            }
                             MessagesStorage.addUsersAndChatsFromMessage(message, usersToLoad, chatsToLoad, null);
                             messages.add(message);
                         }
