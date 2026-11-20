@@ -5,7 +5,7 @@ import java.util.regex.Pattern;
 
 public final class SummaryPolicy {
     static final int MIN_POST_LENGTH = 150;
-    private static final Pattern INN = Pattern.compile("(?iu)\\bинн\\b");
+    private static final Pattern INN = Pattern.compile("(?iu)\\bинн(?=\\b|[0-9])");
 
     private SummaryPolicy() {}
 

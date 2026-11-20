@@ -15,6 +15,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.util.function.BooleanSupplier;
+import java.util.ArrayList;
 
 final class ImageAdOcr {
     private ImageAdOcr() {}
@@ -25,7 +26,7 @@ final class ImageAdOcr {
         BitmapFactory.decodeFile(file.getAbsolutePath(), options);
         if (options.outWidth <= 0 || options.outHeight <= 0) return null;
         options.inSampleSize = 1;
-        while (Math.max(options.outWidth, options.outHeight) / options.inSampleSize > 2000) {
+        while (Math.max(options.outWidth, options.outHeight) / options.inSampleSize > 4096) {
             options.inSampleSize *= 2;
         }
         options.inJustDecodeBounds = false;
@@ -34,33 +35,42 @@ final class ImageAdOcr {
     }
 
     static Bitmap prepare(Bitmap source, boolean bottom) {
-        int top = bottom ? source.getHeight() * 2 / 3 : 0;
-        int height = source.getHeight() - top;
-        float scale = bottom ? Math.min(4f, Math.min(3200f / source.getWidth(), 1200f / height)) : 1f;
-        Bitmap result = Bitmap.createBitmap(Math.max(1, Math.round(source.getWidth() * scale)),
-                Math.max(1, Math.round(height * scale)), Bitmap.Config.ARGB_8888);
+        return prepare(source, new Rect(0, bottom ? source.getHeight() * 2 / 3 : 0,
+                source.getWidth(), source.getHeight()), bottom ? 4f : 1f);
+    }
+
+    private static Bitmap prepare(Bitmap source, Rect region, float maxScale) {
+        int border = 10;
+        float scale = Math.min(maxScale, Math.min(3180f / region.width(), 1180f / region.height()));
+        Bitmap result = Bitmap.createBitmap(Math.max(1, Math.round(region.width() * scale)) + 2 * border,
+                Math.max(1, Math.round(region.height() * scale)) + 2 * border, Bitmap.Config.ARGB_8888);
         try {
             long brightness = 0;
             int samples = 0;
-            for (int y = Math.max(top, source.getHeight() - 10); y < source.getHeight(); y++) {
-                for (int x = 0; x < source.getWidth(); x += Math.max(1, source.getWidth() / 100)) {
+            for (int y = Math.max(region.top, region.bottom - 10); y < region.bottom; y++) {
+                for (int x = region.left; x < region.right; x += Math.max(1, region.width() / 100)) {
                     int pixel = source.getPixel(x, y);
                     brightness += (Color.red(pixel) * 299 + Color.green(pixel) * 587 + Color.blue(pixel) * 114) / 1000;
                     samples++;
                 }
             }
-            float contrast = brightness / Math.max(1, samples) < 128 ? -1.8f : 1.8f;
-            float offset = 128 - contrast * 128;
+            int background = (int) (brightness / Math.max(1, samples));
+            boolean invert = background < 128;
+            float sign = invert ? -1 : 1;
+            float offset = invert ? 255 : 0;
             ColorMatrix matrix = new ColorMatrix();
             matrix.setSaturation(0);
-            matrix.postConcat(new ColorMatrix(new float[]{contrast,0,0,0,offset, 0,contrast,0,0,offset,
-                    0,0,contrast,0,offset, 0,0,0,1,0}));
+            // Increasing contrast around 128 erases pale legal text on a light background.
+            matrix.postConcat(new ColorMatrix(new float[]{sign,0,0,0,offset, 0,sign,0,0,offset,
+                    0,0,sign,0,offset, 0,0,0,1,0}));
             Paint paint = new Paint(Paint.FILTER_BITMAP_FLAG);
             paint.setColorFilter(new ColorMatrixColorFilter(matrix));
             Canvas canvas = new Canvas(result);
-            canvas.drawColor(Color.WHITE);
-            canvas.drawBitmap(source, new Rect(0, top, source.getWidth(), source.getHeight()),
-                    new Rect(0, 0, result.getWidth(), result.getHeight()), paint);
+            // A white border around pale gray pixels can make Otsu erase the text.
+            int padding = invert ? 255 - background : background;
+            canvas.drawColor(Color.rgb(padding, padding, padding));
+            canvas.drawBitmap(source, region, new Rect(border, border, result.getWidth() - border,
+                    result.getHeight() - border), paint);
             return result;
         } catch (RuntimeException | OutOfMemoryError e) {
             result.recycle();
@@ -87,9 +97,21 @@ final class ImageAdOcr {
     }
 
     static boolean recognize(TessBaseAPI tess, Bitmap source, BooleanSupplier cancelled) {
-        for (boolean bottom : new boolean[]{true, false}) {
+        int width = source.getWidth(), height = source.getHeight();
+        int footerTop = Math.max(0, height - Math.min(200, Math.max(32, height / 10)));
+        ArrayList<Rect> regions = new ArrayList<>();
+        regions.add(new Rect(0, footerTop, width, height));
+        // Overlap keeps short markers readable when they fall at a tile boundary.
+        if (width > 512) for (int left = 0; left < width; left += 384) {
+            regions.add(new Rect(Math.min(left, width - 512), footerTop, Math.min(left + 512, width), height));
+            if (left + 512 >= width) break;
+        }
+        regions.add(new Rect(0, height * 2 / 3, width, height));
+        regions.add(new Rect(0, 0, width, height));
+        for (Rect region : regions) {
             if (cancelled.getAsBoolean()) return false;
-            Bitmap prepared = prepare(source, bottom);
+            float scale = region.height() == height ? Math.min(1f, 2000f / Math.max(width, height)) : 6f;
+            Bitmap prepared = prepare(source, region, scale);
             try {
                 tess.setImage(prepared);
                 if (cancelled.getAsBoolean()) return false;

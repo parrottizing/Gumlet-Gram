@@ -22,6 +22,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 public final class ImageAdDetector {
+    static final int CHECK_VERSION = 2;
     private static final ThreadPoolExecutor WORKER = new ThreadPoolExecutor(1, 1, 0, TimeUnit.MILLISECONDS,
             new ArrayBlockingQueue<>(2), runnable -> new Thread(() -> {
                 Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND);
@@ -52,7 +53,11 @@ public final class ImageAdDetector {
     public static void check(MessageObject message) {
         long imageId = imageId(message);
         if (message == null || message.messageOwner == null) return;
-        if (imageId != 0 && message.messageOwner.imageAdCheckedId == imageId) return;
+        if (imageId != 0 && message.messageOwner.imageAdCheckedId == imageId
+                && (message.messageOwner.imageAdAdvertisement || message.messageOwner.imageAdCheckVersion == CHECK_VERSION)) {
+            if (message.messageOwner.imageAdAdvertisement && message.messageOwner.summarizedOpen && !message.summarized) publish(message);
+            return;
+        }
         if (message.messageOwner.imageAdAdvertisement) {
             message.messageOwner.imageAdAdvertisement = false;
             message.messageOwner.summaryText = null;
@@ -78,6 +83,7 @@ public final class ImageAdDetector {
                     if (advertisement != null) AndroidUtilities.runOnUIThread(() -> {
                         if (imageId(message) != imageId || !UserConfig.getInstance(message.currentAccount).isClientActivated()) return;
                         message.messageOwner.imageAdCheckedId = imageId;
+                        message.messageOwner.imageAdCheckVersion = CHECK_VERSION;
                         message.messageOwner.imageAdAdvertisement = advertisement;
                         if (advertisement) {
                             TLRPC.TL_textWithEntities text = new TLRPC.TL_textWithEntities();

@@ -25599,6 +25599,7 @@ public class ChatActivity extends BaseFragment implements
                     cellMessageObject.messageOwner.translatedText = messageObject.messageOwner.translatedText;
                     cellMessageObject.messageOwner.translatedToLanguage = messageObject.messageOwner.translatedToLanguage;
                     cellMessageObject.messageOwner.imageAdCheckedId = messageObject.messageOwner.imageAdCheckedId;
+                    cellMessageObject.messageOwner.imageAdCheckVersion = messageObject.messageOwner.imageAdCheckVersion;
                     cellMessageObject.messageOwner.imageAdAdvertisement = messageObject.messageOwner.imageAdAdvertisement;
                     if (messageObject.messageOwner.imageAdCheckedId != 0) {
                         cellMessageObject.messageOwner.summarizedOpen = messageObject.messageOwner.summarizedOpen;

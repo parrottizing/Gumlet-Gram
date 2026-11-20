@@ -14,7 +14,8 @@ import org.telegram.tgnet.TLRPC;
 import static org.junit.Assert.*;
 
 public class ImageAdOcrTest extends android.app.Instrumentation {
-    @Override public void onCreate(android.os.Bundle args) { start(); }
+    private android.os.Bundle arguments;
+    @Override public void onCreate(android.os.Bundle args) { arguments = args; start(); }
     @Override public void onStart() {
         android.os.Bundle result = new android.os.Bundle();
         try {
@@ -22,7 +23,10 @@ public class ImageAdOcrTest extends android.app.Instrumentation {
             localParamsPreserveNegativeAndPositiveResults();
             skipsUnsupportedMediaAndAlbums();
             recognizesMarkersAndRejectsUnmarkedImage();
+            checksCachedImages();
+            recognizesTinyLowContrastMarkers();
             replacesAnAlreadyDisplayedSummary();
+            ImageAdPipelineTest.check(this, arguments);
             new SummaryPolicyTest().preservesShortPostsAndDetectsAds();
             new SummaryPolicyTest().transcriptionPromptRequiresAConciseDirectSummary();
             result.putString("stream", "PASS OCR markers, negative result, cancellation, image selection, cache roundtrip, summary policy");
@@ -37,6 +41,7 @@ public class ImageAdOcrTest extends android.app.Instrumentation {
         for (boolean advertisement : new boolean[]{false, true}) {
             TLRPC.Message source = new TLRPC.TL_message();
             source.imageAdCheckedId = 1234567890123L;
+            source.imageAdCheckVersion = ImageAdDetector.CHECK_VERSION;
             source.imageAdAdvertisement = advertisement;
             assertFalse(MessageCustomParamsHelper.isEmpty(source));
             NativeByteBuffer buffer = MessageCustomParamsHelper.writeLocalParams(source);
@@ -46,10 +51,12 @@ public class ImageAdOcrTest extends android.app.Instrumentation {
                 TLRPC.Message restored = new TLRPC.TL_message();
                 MessageCustomParamsHelper.readLocalParams(restored, buffer);
                 assertEquals(source.imageAdCheckedId, restored.imageAdCheckedId);
+                assertEquals(source.imageAdCheckVersion, restored.imageAdCheckVersion);
                 assertEquals(advertisement, restored.imageAdAdvertisement);
                 TLRPC.Message copy = new TLRPC.TL_message();
                 MessageCustomParamsHelper.copyParams(restored, copy);
                 assertEquals(source.imageAdCheckedId, copy.imageAdCheckedId);
+                assertEquals(source.imageAdCheckVersion, copy.imageAdCheckVersion);
                 assertEquals(advertisement, copy.imageAdAdvertisement);
             } finally { buffer.reuse(); }
         }
@@ -112,12 +119,58 @@ public class ImageAdOcrTest extends android.app.Instrumentation {
         runOnMainSync(() -> ImageAdDetector.publish(message));
         assertEquals("Реклама", message.messageText.toString());
         assertEquals("Реклама", message.caption.toString());
+        message.summarized = false;
+        message.caption = "Старая сводка";
         runOnMainSync(() -> ImageAdDetector.check(message));
         assertTrue(source.imageAdAdvertisement);
+        assertEquals("Реклама", message.caption.toString());
         source.media.photo.id = 457;
         runOnMainSync(() -> ImageAdDetector.check(message));
         assertFalse(source.imageAdAdvertisement);
         assertEquals(source.message, message.caption.toString());
+    }
+
+    @Test public void recognizesTinyLowContrastMarkers() throws Exception {
+        TessBaseAPI tess = new TessBaseAPI();
+        try {
+            assertTrue(tess.init(ImageAdOcr.modelPath(), "rus", TessBaseAPI.OEM_LSTM_ONLY));
+            tess.setPageSegMode(TessBaseAPI.PageSegMode.PSM_SPARSE_TEXT);
+            for (int size : new int[]{8, 10, 12}) {
+                Bitmap image = Bitmap.createBitmap(2048, 1200, Bitmap.Config.ARGB_8888);
+                try {
+                    Canvas canvas = new Canvas(image);
+                    canvas.drawColor(Color.rgb(240, 240, 240));
+                    Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+                    paint.setColor(Color.rgb(205, 205, 205));
+                    paint.setTextSize(size);
+                    canvas.drawText("ИНН 1234567890", 1000, 1190, paint);
+                    assertTrue("font size " + size, ImageAdOcr.recognize(tess, image, () -> false));
+                } finally { image.recycle(); }
+            }
+        } finally { tess.recycle(); }
+    }
+
+    private void checksCachedImages() throws Exception {
+        for (String key : new String[]{"ads", "nonads"}) {
+            String names = arguments.getString(key);
+            if (names == null) continue;
+            for (String name : names.split(",")) {
+                java.io.File directory = new java.io.File(getTargetContext().getExternalFilesDir(null), "Telegram/Telegram Images");
+                long start = android.os.SystemClock.elapsedRealtime();
+                Bitmap image = ImageAdOcr.decode(new java.io.File(directory, name));
+                assertNotNull(image);
+                TessBaseAPI tess = new TessBaseAPI();
+                try {
+                    assertTrue(tess.init(ImageAdOcr.modelPath(), "rus", TessBaseAPI.OEM_LSTM_ONLY));
+                    tess.setPageSegMode(TessBaseAPI.PageSegMode.PSM_SPARSE_TEXT);
+                    assertEquals(key + " " + name, key.equals("ads"), ImageAdOcr.recognize(tess, image,
+                            () -> android.os.SystemClock.elapsedRealtime() - start >= 4000));
+                    long elapsed = android.os.SystemClock.elapsedRealtime() - start;
+                    assertTrue("OCR deadline exceeded", elapsed < 4000);
+                    android.util.Log.i("ImageAdOcrTest", key + " elapsed=" + elapsed);
+                } finally { tess.recycle(); image.recycle(); }
+            }
+        }
     }
 
     @Test public void recognizesMarkersAndRejectsUnmarkedImage() throws Exception {

@@ -59440,6 +59440,7 @@ public class TLRPC {
         public long errorAllowedPriceStars; //custom
         public long errorNewPriceStars; //custom
         public long imageAdCheckedId; //custom
+        public int imageAdCheckVersion; //custom
         public boolean imageAdAdvertisement; //custom
         public boolean summarizedOpen; //custom
         public TL_textWithEntities summaryText; //custom

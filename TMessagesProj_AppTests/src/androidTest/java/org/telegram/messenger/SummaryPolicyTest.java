@@ -10,6 +10,8 @@ public class SummaryPolicyTest {
     public void preservesShortPostsAndDetectsAds() {
         assertFalse(SummaryPolicy.shouldSummarize("Короткая новость"));
         assertFalse(SummaryPolicy.isAdvertisement("Инновации без рекламы"));
+        assertFalse(SummaryPolicy.isAdvertisement("Именинница Инна"));
+        assertTrue(SummaryPolicy.isAdvertisement("ИНН7713076301"));
         assertTrue(SummaryPolicy.shouldSummarize("Партнерский материал #реклама"));
         assertTrue(SummaryPolicy.isAdvertisement("Партнерский материал #ПРОМО"));
         assertTrue(SummaryPolicy.shouldSummarize("Реквизиты: ИНН 1234567890"));

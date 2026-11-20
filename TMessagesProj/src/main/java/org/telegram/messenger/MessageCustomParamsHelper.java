@@ -57,6 +57,7 @@ public class MessageCustomParamsHelper {
         toMessage.errorNewPriceStars = fromMessage.errorNewPriceStars;
         toMessage.translatedVoiceTranscription = fromMessage.translatedVoiceTranscription;
         toMessage.imageAdCheckedId = fromMessage.imageAdCheckedId;
+        toMessage.imageAdCheckVersion = fromMessage.imageAdCheckVersion;
         toMessage.imageAdAdvertisement = fromMessage.imageAdAdvertisement;
         toMessage.summarizedOpen = fromMessage.summarizedOpen;
         toMessage.summaryText = fromMessage.summaryText;
@@ -126,6 +127,7 @@ public class MessageCustomParamsHelper {
             flags = setFlag(flags, FLAG_14, isCommentEncryptionPreparing(message));
             flags = setFlag(flags, FLAG_15, message.imageAdCheckedId != 0);
             flags = setFlag(flags, FLAG_16, message.imageAdAdvertisement);
+            flags = setFlag(flags, FLAG_17, message.imageAdCheckVersion != 0);
         }
 
         @Override
@@ -179,6 +181,7 @@ public class MessageCustomParamsHelper {
                 message.translatedRichMessage.serializeToStream(stream);
             }
             if (hasFlag(flags, FLAG_15)) stream.writeInt64(message.imageAdCheckedId);
+            if (hasFlag(flags, FLAG_17)) stream.writeInt32(message.imageAdCheckVersion);
         }
 
         @Override
@@ -236,6 +239,7 @@ public class MessageCustomParamsHelper {
             }
             message.imageAdCheckedId = hasFlag(flags, FLAG_15) ? stream.readInt64(exception) : 0;
             message.imageAdAdvertisement = hasFlag(flags, FLAG_16);
+            message.imageAdCheckVersion = hasFlag(flags, FLAG_17) ? stream.readInt32(exception) : 0;
         }
 
     }
