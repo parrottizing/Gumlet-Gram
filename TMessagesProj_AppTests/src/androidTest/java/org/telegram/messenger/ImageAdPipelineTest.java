@@ -4,10 +4,15 @@ import android.app.Instrumentation;
 import android.content.Intent;
 import android.os.Bundle;
 import android.os.SystemClock;
+import android.view.View;
+import android.view.ViewGroup;
 
 import org.telegram.SQLite.SQLiteCursor;
 import org.telegram.tgnet.NativeByteBuffer;
 import org.telegram.tgnet.TLRPC;
+import org.telegram.ui.Cells.ChatMessageCell;
+import org.telegram.ui.ChatActivity;
+import org.telegram.ui.LaunchActivity;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -19,6 +24,84 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.junit.Assert.*;
 
 final class ImageAdPipelineTest {
+    // Replay a completed non-ad scan on an actual channel cell, without changing its stored state.
+    static void checkCaptionRefresh(Instrumentation instrumentation, Bundle arguments) throws Exception {
+        String caption = arguments.getString("caption");
+        if (caption == null) return;
+        String channel = arguments.getString("caption_channel", "%");
+        int account = UserConfig.selectedAccount;
+        MessagesStorage storage = MessagesStorage.getInstance(account);
+        Bundle target = new Bundle();
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+        CountDownLatch loaded = new CountDownLatch(1);
+        storage.getStorageQueue().postRunnable(() -> {
+            try {
+                SQLiteCursor cursor = storage.getDatabase().queryFinalized(
+                        "SELECT uid, mid FROM messages_v2 WHERE uid IN (SELECT -uid FROM chats WHERE name LIKE ?) " +
+                                "AND instr(data, CAST(? AS BLOB)) > 0 ORDER BY date DESC LIMIT 1", channel, caption);
+                try {
+                    if (cursor.next()) {
+                        target.putLong("chat_id", -cursor.longValue(0));
+                        target.putInt("message_id", cursor.intValue(1));
+                    }
+                } finally { cursor.dispose(); }
+            } catch (Throwable error) { failure.set(error); }
+            finally { loaded.countDown(); }
+        });
+        assertTrue("Loading cached post timed out", loaded.await(15, TimeUnit.SECONDS));
+        if (failure.get() != null) throw new AssertionError(failure.get());
+        assertTrue("Caption not found in cache", target.containsKey("message_id"));
+
+        Intent intent = instrumentation.getTargetContext().getPackageManager()
+                .getLaunchIntentForPackage(instrumentation.getTargetContext().getPackageName());
+        assertNotNull(intent);
+        instrumentation.startActivitySync(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        ChatActivity chat = new ChatActivity(target);
+        instrumentation.runOnMainSync(() -> {
+            try {
+                assertTrue(LaunchActivity.getLastFragment().presentFragment(chat, false, true));
+            } catch (Throwable error) { failure.set(error); }
+        });
+        if (failure.get() != null) throw new AssertionError(failure.get());
+        AtomicReference<ChatMessageCell> visible = new AtomicReference<>();
+        long deadline = SystemClock.elapsedRealtime() + 15_000;
+        while (visible.get() == null && SystemClock.elapsedRealtime() < deadline) {
+            instrumentation.runOnMainSync(() -> {
+                ViewGroup list = chat.getChatListView();
+                if (list == null) return;
+                for (int i = 0; i < list.getChildCount(); i++) {
+                    View child = list.getChildAt(i);
+                    if (child instanceof ChatMessageCell) {
+                        MessageObject message = ((ChatMessageCell) child).getMessageObject();
+                        if (message != null && message.getId() == target.getInt("message_id")) {
+                            visible.set((ChatMessageCell) child);
+                            break;
+                        }
+                    }
+                }
+            });
+            if (visible.get() == null) Thread.sleep(100);
+        }
+        assertNotNull("Cached photo post did not appear in the channel", visible.get());
+        instrumentation.runOnMainSync(() -> {
+            try {
+                ChatMessageCell cell = visible.get();
+                MessageObject message = cell.getMessageObject();
+                assertEquals(caption, message.messageOwner.message);
+                assertFalse(TranslateController.isSummarizable(message));
+                long imageId = ImageAdDetector.imageId(message);
+                assertTrue("Expected a photo post eligible for OCR", imageId != 0);
+                message.messageOwner.imageAdCheckedId = imageId;
+                message.messageOwner.imageAdCheckVersion = ImageAdDetector.CHECK_VERSION;
+                chat.didReceivedNotification(NotificationCenter.messageTranslated, account, message, true);
+                assertNotNull("Non-advertisement scan removed the visible caption", message.caption);
+                assertEquals(caption, message.caption.toString());
+                assertNotNull("Channel cell did not lay out the caption", cell.getCaptionLayout());
+            } catch (Throwable error) { failure.set(error); }
+        });
+        if (failure.get() != null) throw new AssertionError(failure.get());
+    }
+
     // Opt-in device regression: rechecks existing cached ads without sending messages.
     static void check(Instrumentation instrumentation, Bundle arguments) throws Exception {
         String names = arguments.getString("pipeline_image");

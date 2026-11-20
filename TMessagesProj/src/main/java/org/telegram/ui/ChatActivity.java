@@ -25601,7 +25601,8 @@ public class ChatActivity extends BaseFragment implements
                     cellMessageObject.messageOwner.imageAdCheckedId = messageObject.messageOwner.imageAdCheckedId;
                     cellMessageObject.messageOwner.imageAdCheckVersion = messageObject.messageOwner.imageAdCheckVersion;
                     cellMessageObject.messageOwner.imageAdAdvertisement = messageObject.messageOwner.imageAdAdvertisement;
-                    if (messageObject.messageOwner.imageAdCheckedId != 0) {
+                    final boolean refreshCaption = messageObject.messageOwner.imageAdCheckedId != 0;
+                    if (refreshCaption) {
                         cellMessageObject.messageOwner.summarizedOpen = messageObject.messageOwner.summarizedOpen;
                         cellMessageObject.caption = null;
                         cellMessageObject.summarized = false;
@@ -25609,7 +25610,11 @@ public class ChatActivity extends BaseFragment implements
                     cellMessageObject.messageOwner.summaryText = messageObject.messageOwner.summaryText;
                     cellMessageObject.messageOwner.translatedSummaryText = messageObject.messageOwner.translatedSummaryText;
                     cellMessageObject.messageOwner.translatedSummaryLanguage = messageObject.messageOwner.translatedSummaryLanguage;
-                    if (cellMessageObject.updateTranslation(false)) {
+                    final boolean translationUpdated = cellMessageObject.updateTranslation(false);
+                    if (refreshCaption && !translationUpdated) {
+                        cellMessageObject.generateCaption();
+                    }
+                    if (translationUpdated || refreshCaption) {
                         update = true;
                         ArrayList<Integer> dependentMessages = replyMessageOwners.get(cellMessageObject.getId());
                         if (dependentMessages != null) {

@@ -27,6 +27,7 @@ public class ImageAdOcrTest extends android.app.Instrumentation {
             recognizesTinyLowContrastMarkers();
             replacesAnAlreadyDisplayedSummary();
             ImageAdPipelineTest.check(this, arguments);
+            ImageAdPipelineTest.checkCaptionRefresh(this, arguments);
             new SummaryPolicyTest().preservesShortPostsAndDetectsAds();
             new SummaryPolicyTest().transcriptionPromptRequiresAConciseDirectSummary();
             result.putString("stream", "PASS OCR markers, negative result, cancellation, image selection, cache roundtrip, summary policy");
