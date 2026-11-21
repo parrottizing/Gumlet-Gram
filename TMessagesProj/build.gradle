@@ -124,7 +124,7 @@ dependencies {
     api project(":TMessagesProj_Modules:media3:media-lib-decoder-ffmpeg")
     api project(":TMessagesProj_Modules:media3:media-lib-session")
     api project(':jlatexmath')
-    implementation "com.google.ai.edge.litertlm:litertlm-android:0.16.0"
+    implementation "com.google.ai.edge.litertlm:litertlm-android:0.19.1"
 
 //    implementation 'com.google.mlkit:translate:17.0.3'
 

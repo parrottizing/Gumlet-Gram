@@ -1144,7 +1144,7 @@ public class TranslateController extends BaseController {
             AndroidUtilities.runOnUIThread(callback);
             return;
         }
-        if (!LocalGemmaSummaryClient.isAvailable()) {
+        if (!LocalSummaryClient.isAvailable()) {
             message.messageOwner.summarizedOpen = false;
             getMessagesStorage().updateMessageCustomParams(message.getDialogId(), message.messageOwner);
             AndroidUtilities.runOnUIThread(callback);
@@ -1155,7 +1155,7 @@ public class TranslateController extends BaseController {
             return;
         }
         getMessagesStorage().updateMessageCustomParams(message.getDialogId(), message.messageOwner);
-        LocalGemmaSummaryClient.summarizeTranscription(message.messageOwner.voiceTranscription, summary -> AndroidUtilities.runOnUIThread(() -> {
+        LocalSummaryClient.summarizeTranscription(message.messageOwner.voiceTranscription, summary -> AndroidUtilities.runOnUIThread(() -> {
             loadingSummarizations.remove(id);
             if (!TextUtils.isEmpty(summary)) {
                 TLRPC.TL_textWithEntities result = new TLRPC.TL_textWithEntities();
@@ -1192,7 +1192,7 @@ public class TranslateController extends BaseController {
         final int generation = summaryGeneration;
         final int id = Objects.hash(message.getDialogId(), message.getId(), language != null ? 1 : 0);
         loadingSummarizations.add(id);
-        GemmaSummaryClient.summarize(message.messageOwner.message, language, summary -> AndroidUtilities.runOnUIThread(() -> {
+        SummaryClient.summarize(message.messageOwner.message, language, summary -> AndroidUtilities.runOnUIThread(() -> {
             if (generation != summaryGeneration) {
                 return;
             }

@@ -125,7 +125,7 @@ public final class ImageAdDetector {
     }
 
     static boolean allowed() {
-        if (ApplicationLoader.mainInterfacePaused || !ApplicationLoader.isScreenOn || LocalGemmaSummaryClient.isBusy()) return false;
+        if (ApplicationLoader.mainInterfacePaused || !ApplicationLoader.isScreenOn || LocalSummaryClient.isBusy()) return false;
         Context context = ApplicationLoader.applicationContext;
         PowerManager power = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
         if (power == null || !power.isInteractive() || power.isPowerSaveMode()
