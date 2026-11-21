@@ -9117,6 +9117,8 @@ public class MessagesStorage extends BaseController {
         final boolean scheduled = mode == ChatActivity.MODE_SCHEDULED;
         final boolean quickReplies = mode == ChatActivity.MODE_QUICK_REPLIES;
         final boolean welcomeMessages = mode == ChatActivity.MODE_WELCOME_MESSAGES;
+        final boolean channelUnreadLoad = load_type == LOAD_FROM_UNREAD && mode == ChatActivity.MODE_DEFAULT &&
+                threadMessageId == 0 && ChatObject.isChannelAndNotMegaGroup(-dialogId, currentAccount);
         try {
             ArrayList<Long> usersToLoad = new ArrayList<>();
             ArrayList<Long> chatsToLoad = new ArrayList<>();
@@ -9329,12 +9331,17 @@ public class MessagesStorage extends BaseController {
                         if (load_type == LOAD_FROM_UNREAD) {
                             withEphemeralMessages = true;
                             if (threadMessageId == 0) {
-                                cursor = database.queryFinalized("SELECT inbox_max, unread_count, date, unread_count_i FROM dialogs WHERE did = " + dialogId);
+                                cursor = database.queryFinalized("SELECT inbox_max, unread_count, date, unread_count_i, last_mid FROM dialogs WHERE did = " + dialogId);
                                 if (cursor.next()) {
                                     messageMaxId = max_id_query = min_unread_id = Math.max(1, cursor.intValue(0));
                                     count_unread = cursor.intValue(1);
                                     max_unread_date = cursor.intValue(2);
                                     mentions_unread = cursor.intValue(3);
+                                    if (channelUnreadLoad) {
+                                        messageMaxId = max_id_query = min_unread_id = Math.max(min_unread_id,
+                                                getMessagesController().dialogs_read_inbox_max.getOrDefault(dialogId, 0));
+                                        last_message_id = cursor.intValue(4);
+                                    }
                                     queryFromServer = true;
                                     if (dialogId == currentUserId) {
                                         count_unread = 0;
@@ -9401,7 +9408,7 @@ public class MessagesStorage extends BaseController {
                                     cursor.dispose();
                                     cursor = null;
                                 }
-                            } else {
+                            } else if (!channelUnreadLoad) {
                                 if (threadMessageId != 0) {
                                     cursor = database.queryFinalized(String.format(Locale.US, "SELECT start, end FROM messages_holes_topics WHERE uid = %d AND topic_id = %d AND start < %d AND end > %d", dialogId, threadMessageId, max_id_query, max_id_query));
                                 } else {
@@ -9490,7 +9497,7 @@ public class MessagesStorage extends BaseController {
                             cursor = database.queryFinalized(String.format(Locale.US, "SELECT max(mid) FROM messages_v2 WHERE uid = %d AND mid > 0", dialogId));
                         }
                         if (cursor.next()) {
-                            last_message_id = cursor.intValue(0);
+                            last_message_id = Math.max(last_message_id, cursor.intValue(0));
                         }
                         cursor.dispose();
                         cursor = null;

@@ -11779,7 +11779,18 @@ public class MessagesController extends BaseController implements NotificationCe
                                     getMessagesStorage().putDialogs(dialogs, 2);
                                 }
 
-                                loadMessagesInternal(dialogId, mergeDialogId, loadInfo, count, max_id, offset_date, false, minDate, classGuid, load_type, dialog.top_message, 0, threadMessageId, loadIndex, first_unread, dialog.unread_count, last_date, queryFromServer, dialog.unread_mentions_count, false, processMessages, isTopic, null, 0L);
+                                int readMax = first_unread;
+                                int anchor = max_id;
+                                boolean fromReadBoundary = queryFromServer;
+                                if (load_type == LOAD_FROM_UNREAD && dialog.unread_count > 0 &&
+                                        ChatObject.isChannelAndNotMegaGroup(chat)) {
+                                    readMax = Math.max(dialog.read_inbox_max_id, dialogs_read_inbox_max.getOrDefault(dialogId, 0));
+                                    anchor = Math.max(1, readMax);
+                                    fromReadBoundary = true;
+
+                                    dialogs_read_inbox_max.merge(dialogId, readMax, Math::max);
+                                }
+                                loadMessagesInternal(dialogId, mergeDialogId, loadInfo, count, anchor, offset_date, false, minDate, classGuid, load_type, dialog.top_message, 0, threadMessageId, loadIndex, readMax, dialog.unread_count, last_date, fromReadBoundary, dialog.unread_mentions_count, false, processMessages, isTopic, null, 0L);
                             }
                         } else {
                             AndroidUtilities.runOnUIThread(() -> {
@@ -12284,7 +12295,13 @@ public class MessagesController extends BaseController implements NotificationCe
                             }
                         }
                         int visibleCount = Math.max(0, count - objects.size() + visible.size());
-                        getNotificationCenter().postNotificationName(NotificationCenter.messagesDidLoad, dialogId, visibleCount, visible, isCache, finalFirst_unread_final, visibleLastMessage, unread_count, last_date, load_type, isEnd, classGuid, loadIndex, max_id, mentionsCount, mode);
+                        int visibleFirstUnread = finalFirst_unread_final;
+                        if (mode == ChatActivity.MODE_DEFAULT && threadMessageId == 0 && load_type == LOAD_FROM_UNREAD &&
+                                queryFromServer && unread_count > 0 && ChatObject.isChannelAndNotMegaGroup(-dialogId, currentAccount)) {
+                            int readMax = Math.max(first_unread, dialogs_read_inbox_max.getOrDefault(dialogId, 0));
+                            visibleFirstUnread = firstVisibleUnreadChannelPost(visible, readMax);
+                        }
+                        getNotificationCenter().postNotificationName(NotificationCenter.messagesDidLoad, dialogId, visibleCount, visible, isCache, visibleFirstUnread, visibleLastMessage, unread_count, last_date, load_type, isEnd, classGuid, loadIndex, max_id, mentionsCount, mode);
                     }
                 }, classGuid, loaderLogger);
             } else {
@@ -12301,6 +12318,26 @@ public class MessagesController extends BaseController implements NotificationCe
             Timer.done(t3);
             Timer.finish(loaderLogger);
         });
+    }
+
+    static int firstVisibleUnreadChannelPost(ArrayList<MessageObject> visible, int readMax) {
+        int firstUnread = 0;
+        for (MessageObject message : visible) {
+            int id = message.getId();
+            if (id > readMax && (firstUnread == 0 || id < firstUnread) &&
+                    TranslateController.isGumletChannelPost(message) && (!message.isOut() || message.messageOwner.from_scheduled)) {
+                firstUnread = id;
+            }
+        }
+        return firstUnread;
+    }
+
+    public boolean shouldOpenAtChannelUnread(TLRPC.Chat chat) {
+        if (!ChatObject.isChannelAndNotMegaGroup(chat)) {
+            return false;
+        }
+        TLRPC.Dialog dialog = dialogs_dict.get(-chat.id);
+        return dialog != null && dialog.unread_count > 0;
     }
 
     public void forceNoReload(long dialogId, int mode) {
@@ -23239,11 +23276,6 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     public Runnable ensureMessagesLoaded(long dialogId, int messageId, MessagesLoadedCallback callback) {
-        SharedPreferences sharedPreferences = MessagesController.getNotificationsSettings(currentAccount);
-        if (messageId == 0) {
-            messageId = sharedPreferences.getInt("diditem" + dialogId, 0);
-        }
-        int finalMessageId = messageId;
         int classGuid = ConnectionsManager.generateClassGuid();
 
         long chatId;
@@ -23253,7 +23285,7 @@ public class MessagesController extends BaseController implements NotificationCe
             chatId = 0;
         }
 
-        TLRPC.Chat currentChat;
+        TLRPC.Chat currentChat = null;
 
         if (chatId != 0) {
             currentChat = getMessagesController().getChat(chatId);
@@ -23268,7 +23300,7 @@ public class MessagesController extends BaseController implements NotificationCe
                         if (cancelled[0]) return;
                         if (chat != null) {
                             getMessagesController().putChat(chat, true);
-                            cancel[0] = ensureMessagesLoaded(dialogId, finalMessageId, callback);
+                            cancel[0] = ensureMessagesLoaded(dialogId, messageId, callback);
                         } else {
                             if (callback != null) {
                                 callback.onError();
@@ -23285,6 +23317,8 @@ public class MessagesController extends BaseController implements NotificationCe
             }
         }
 
+        int finalMessageId = messageId != 0 || shouldOpenAtChannelUnread(currentChat) ? messageId :
+                getNotificationsSettings(currentAccount).getInt("diditem" + dialogId, 0);
         int count = AndroidUtilities.isTablet() ? 30 : 20;
 
         NotificationCenter.NotificationCenterDelegate delegate = new NotificationCenter.NotificationCenterDelegate() {
@@ -23322,7 +23356,7 @@ public class MessagesController extends BaseController implements NotificationCe
         getNotificationCenter().addObserver(delegate, NotificationCenter.messagesDidLoadWithoutProcess);
         getNotificationCenter().addObserver(delegate, NotificationCenter.loadingMessagesFailed);
 
-        if (messageId != 0) {
+        if (finalMessageId != 0) {
             loadMessagesInternal(dialogId, 0, true, count, finalMessageId, 0, true, 0, classGuid, 3, 0, 0, 0, -1, 0, 0, 0, false, 0, true, false, false, null, 0L);
         } else {
             loadMessagesInternal(dialogId, 0, true, count, finalMessageId, 0, true, 0, classGuid, 2, 0, 0, 0, -1, 0, 0, 0, false, 0, true, false, false, null, 0L);

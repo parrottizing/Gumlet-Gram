@@ -3017,7 +3017,8 @@ public class ChatActivity extends BaseFragment implements
                 if (startLoadFromMessageId == 0) {
                     SharedPreferences sharedPreferences = MessagesController.getNotificationsSettings(currentAccount);
                     int messageId = sharedPreferences.getInt("diditem" + NotificationsController.getSharedPrefKey(dialog_id, getTopicId()), 0);
-                    if (messageId != 0) {
+                    if (messageId != 0 && (chatMode != MODE_DEFAULT || isTopic ||
+                            !getMessagesController().shouldOpenAtChannelUnread(currentChat))) {
                         wasManualScroll = true;
                         loadingFromOldPosition = true;
                         startLoadFromMessageOffset = sharedPreferences.getInt("diditemo" + NotificationsController.getSharedPrefKey(dialog_id, getTopicId()), 0);
@@ -22141,7 +22142,8 @@ public class ChatActivity extends BaseFragment implements
                 }
             }
             if (load_type == 2 && messageId != 0 && messageId == first_unread_id && chatMode != MODE_SAVED && !isQuickRepliesOrWelcomeMessagesMode()) {
-                if ((approximateHeightSum > AndroidUtilities.displaySize.y / 2 || isThreadChat()) || !forwardEndReached[0]) {
+                if (approximateHeightSum > AndroidUtilities.displaySize.y / 2 || isThreadChat() || !forwardEndReached[0] ||
+                        unread_to_load > 0 && chatMode == MODE_DEFAULT && ChatObject.isChannelAndNotMegaGroup(currentChat)) {
                     if (!isThreadChat() || threadMaxInboxReadId != 0) {
                         TLRPC.Message dateMsg = new TLRPC.TL_message();
                         dateMsg.message = "";
