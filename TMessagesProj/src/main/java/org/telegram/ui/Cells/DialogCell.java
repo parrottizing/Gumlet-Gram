@@ -475,6 +475,7 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
     private ArrayList<MessageObject> groupMessages;
     private boolean clearingDialog;
     private CharSequence lastMessageString;
+    private String lastPreviewSummary;
     private int dialogsType;
     private int folderId;
     private int messageId;
@@ -1381,6 +1382,7 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
             msgText = sp;
         }
         lastMessageString = msgText;
+        lastPreviewSummary = getPreviewSummary();
 
         if (isShareToStoryCell) {
             drawPinBackground = true;
@@ -2112,8 +2114,8 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
             }
 
             if (draftMessage == null && TranslateController.isGumletChannelPost(message) &&
-                    (TranslateController.needsChannelSummary(message) || message.messageOwner.summaryText != null)) {
-                messageString = TranslateController.needsChannelSummary(message) ? "" : message.messageOwner.summaryText.text;
+                    (lastPreviewSummary != null || TranslateController.needsChannelSummary(message))) {
+                messageString = lastPreviewSummary == null ? "" : lastPreviewSummary;
                 thumbsCount = 0;
                 drawForwardIcon = false;
             }
@@ -3466,7 +3468,8 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
                     }
                 }
                 if (!continueUpdate && (mask & MessagesController.UPDATE_MASK_MESSAGE_TEXT) != 0) {
-                    if (message != null && message.messageText != lastMessageString) {
+                    if (message != null && (message.messageText != lastMessageString ||
+                            !TextUtils.equals(lastPreviewSummary, getPreviewSummary()))) {
                         continueUpdate = true;
                     }
                 }
@@ -5686,12 +5689,11 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
                 sb.append(". ");
             }
         }
-        if (TranslateController.isGumletChannelPost(message) &&
-                    (TranslateController.needsChannelSummary(message) || message.messageOwner.summaryText != null)) {
-            if (!TranslateController.needsChannelSummary(message)) {
-                sb.append(message.messageOwner.summaryText.text);
-            }
+        String summary = getPreviewSummary();
+        if (summary != null || TranslateController.needsChannelSummary(message)) {
+            if (summary != null) sb.append(summary);
             event.setContentDescription(sb);
+            setContentDescription(sb);
             return;
         }
         if (encryptedChat == null) {
@@ -5722,6 +5724,22 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
         }
         event.setContentDescription(sb);
         setContentDescription(sb);
+    }
+
+    private String getPreviewSummary() {
+        if (!TranslateController.isGumletChannelPost(message)) return null;
+        if (message.messageOwner.summaryText != null && !TextUtils.isEmpty(message.messageOwner.summaryText.text)) {
+            return message.messageOwner.summaryText.text;
+        }
+        if (groupMessages != null) {
+            for (MessageObject member : groupMessages) {
+                if (member != null && TranslateController.isOutgoingChannelForward(member.messageOwner) &&
+                        member.messageOwner.summaryText != null && !TextUtils.isEmpty(member.messageOwner.summaryText.text)) {
+                    return member.messageOwner.summaryText.text;
+                }
+            }
+        }
+        return null;
     }
 
     private MessageObject getCaptionMessage() {

@@ -5792,12 +5792,30 @@ public class MessagesStorage extends BaseController {
     }
 
     public void updateMessageCustomParams(long dialogId, TLRPC.Message saveFromMessage) {
+        updateMessageCustomParams(dialogId, saveFromMessage.id, null,
+                message -> MessageCustomParamsHelper.copyParams(saveFromMessage, message));
+    }
+
+    void saveForwardedPostSummary(long dialogId, int messageId, String original, TLRPC.TL_textWithEntities summary) {
+        updateMessageCustomParams(dialogId, messageId, original, message -> {
+            if (message.summaryText == null || TextUtils.isEmpty(message.summaryText.text)) {
+                message.summaryText = summary;
+            }
+        });
+    }
+
+    private void updateMessageCustomParams(long dialogId, int messageId, String expectedText,
+                                           Utilities.Callback<TLRPC.Message> update) {
         storageQueue.postRunnable(() -> {
             SQLitePreparedStatement state = null;
             try {
                 database.beginTransaction();
-                TLRPC.Message message = getMessageWithCustomParamsOnlyInternal(saveFromMessage.id, dialogId);
-                MessageCustomParamsHelper.copyParams(saveFromMessage, message);
+                if (expectedText != null) {
+                    TLRPC.Message stored = getMessageInternal(dialogId, messageId);
+                    if (stored == null || !TextUtils.equals(stored.message, expectedText)) return;
+                }
+                TLRPC.Message message = getMessageWithCustomParamsOnlyInternal(messageId, dialogId);
+                update.run(message);
 
                 for (int i = 0; i < 2; i++) {
                     if (i == 0) {
@@ -5812,7 +5830,7 @@ public class MessagesStorage extends BaseController {
                     } else {
                         state.bindNull(1);
                     }
-                    state.bindInteger(2, saveFromMessage.id);
+                    state.bindInteger(2, messageId);
                     state.bindLong(3, dialogId);
                     state.step();
                     state.dispose();

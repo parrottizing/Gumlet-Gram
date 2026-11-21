@@ -137,6 +137,12 @@ public class TranslateController extends BaseController {
         if (isGumletChannelPost(messageObject) && messageObject.messageOwner.imageAdAdvertisement
                 && !messageObject.isRestrictedMessage && ImageAdDetector.imageId(messageObject) != 0) return true;
         final boolean gumletChannelPost = isGumletChannelPost(messageObject);
+        if (gumletChannelPost && isOutgoingChannelForward(messageObject.messageOwner) &&
+                !messageObject.isRestrictedMessage && !messageObject.isSponsored() &&
+                messageObject.messageOwner.summaryText != null &&
+                !TextUtils.isEmpty(messageObject.messageOwner.summaryText.text)) {
+            return true;
+        }
         return (
             messageObject != null &&
             messageObject.messageOwner != null &&
@@ -167,10 +173,66 @@ public class TranslateController extends BaseController {
     }
 
     public static boolean needsChannelSummary(MessageObject message) {
-        return isGumletChannelPost(message) && isSummarizable(message) &&
+        return isGumletChannelPost(message) && !isOutgoingChannelForward(message.messageOwner) && isSummarizable(message) &&
                 message.getId() > MessagesController.getMainSettings(message.currentAccount).getInt(
                         "channel_summary_start_" + message.getDialogId(), Integer.MAX_VALUE) &&
                 (message.messageOwner.summaryText == null || TextUtils.isEmpty(message.messageOwner.summaryText.text));
+    }
+
+    public static boolean isOutgoingChannelForward(TLRPC.Message message) {
+        return message != null && message.out && message.post && message.peer_id instanceof TLRPC.TL_peerChannel &&
+                (MessageObject.isForwardedMessage(message) || message.forwardedWithoutAuthor ||
+                        message.id < 0 && message.params != null && message.params.containsKey("fwd_id"));
+    }
+
+    static void reuseForwardedPostSummary(TLRPC.Message source, TLRPC.Message destination) {
+        if (attachForwardedPostSummary(destination, source.message, source.summaryText)) {
+            destination.summarizedOpen = source.summarizedOpen;
+        }
+    }
+
+    static boolean attachForwardedPostSummary(TLRPC.Message post, String original, TLRPC.TL_textWithEntities summary) {
+        if (!TextUtils.equals(original, post.message) ||
+                summary == null || TextUtils.isEmpty(summary.text) ||
+                post.summaryText != null && !TextUtils.isEmpty(post.summaryText.text)) {
+            return false;
+        }
+        post.summaryText = summary;
+        return true;
+    }
+
+    void summarizeForwardedChannelPost(MessageObject message) {
+        final TLRPC.Message post = message.messageOwner;
+        if (!isOutgoingChannelForward(post) ||
+                message.getId() <= 0 || message.scheduled || message.isRestrictedMessage || message.isSponsored() ||
+                TextUtils.isEmpty(post.message) || post.summaryText != null && !TextUtils.isEmpty(post.summaryText.text) ||
+                !SummaryClient.isConfigured()) {
+            return;
+        }
+        final String original = post.message;
+        pushToSummarize(message, null, summary -> {
+            if (summary == null || message.messageOwner != post || !TextUtils.equals(original, post.message)) {
+                return;
+            }
+            if (attachForwardedPostSummary(post, original, summary)) {
+                getMessagesStorage().saveForwardedPostSummary(message.getDialogId(), message.getId(), original, summary);
+            }
+
+            // Refresh the dialog preview without changing the open state of a chat message.
+            ArrayList<MessageObject> previews = messagesController.dialogMessage.get(message.getDialogId());
+            if (previews != null) {
+                boolean changed = false;
+                for (MessageObject preview : previews) {
+                    if (preview.getId() == message.getId()) {
+                        changed |= preview.messageOwner == post ||
+                                attachForwardedPostSummary(preview.messageOwner, original, post.summaryText);
+                    }
+                }
+                if (changed) {
+                    getNotificationCenter().postNotificationName(NotificationCenter.updateInterfaces, MessagesController.UPDATE_MASK_MESSAGE_TEXT);
+                }
+            }
+        });
     }
 
     // The first snapshot is existing history, not a queue of new posts to summarize.

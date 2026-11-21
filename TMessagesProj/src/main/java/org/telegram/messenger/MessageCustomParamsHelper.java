@@ -22,6 +22,7 @@ public class MessageCustomParamsHelper {
             !message.voiceTranscriptionOpen &&
             message.imageAdCheckedId == 0 &&
             !message.summarizedOpen &&
+            !message.forwardedWithoutAuthor &&
             message.summaryText == null &&
             message.translatedSummaryLanguage == null &&
             message.translatedSummaryText == null &&
@@ -60,6 +61,7 @@ public class MessageCustomParamsHelper {
         toMessage.imageAdCheckVersion = fromMessage.imageAdCheckVersion;
         toMessage.imageAdAdvertisement = fromMessage.imageAdAdvertisement;
         toMessage.summarizedOpen = fromMessage.summarizedOpen;
+        toMessage.forwardedWithoutAuthor = fromMessage.forwardedWithoutAuthor;
         toMessage.summaryText = fromMessage.summaryText;
         toMessage.translatedSummaryText = fromMessage.translatedSummaryText;
         toMessage.translatedSummaryLanguage = fromMessage.translatedSummaryLanguage;
@@ -128,6 +130,7 @@ public class MessageCustomParamsHelper {
             flags = setFlag(flags, FLAG_15, message.imageAdCheckedId != 0);
             flags = setFlag(flags, FLAG_16, message.imageAdAdvertisement);
             flags = setFlag(flags, FLAG_17, message.imageAdCheckVersion != 0);
+            flags = setFlag(flags, FLAG_18, message.forwardedWithoutAuthor);
         }
 
         @Override
@@ -240,6 +243,7 @@ public class MessageCustomParamsHelper {
             message.imageAdCheckedId = hasFlag(flags, FLAG_15) ? stream.readInt64(exception) : 0;
             message.imageAdAdvertisement = hasFlag(flags, FLAG_16);
             message.imageAdCheckVersion = hasFlag(flags, FLAG_17) ? stream.readInt32(exception) : 0;
+            message.forwardedWithoutAuthor = hasFlag(flags, FLAG_18);
         }
 
     }

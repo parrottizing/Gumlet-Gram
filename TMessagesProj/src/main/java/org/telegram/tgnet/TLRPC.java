@@ -59442,6 +59442,7 @@ public class TLRPC {
         public long imageAdCheckedId; //custom
         public int imageAdCheckVersion; //custom
         public boolean imageAdAdvertisement; //custom
+        public boolean forwardedWithoutAuthor; //custom
         public boolean summarizedOpen; //custom
         public TL_textWithEntities summaryText; //custom
         public String translatedSummaryLanguage; //custom

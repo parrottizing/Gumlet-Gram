@@ -2648,6 +2648,10 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                 }
                 newMsg.dialog_id = peer;
                 newMsg.peer_id = peer_id;
+                if (TranslateController.isOutgoingChannelForward(newMsg)) {
+                    newMsg.forwardedWithoutAuthor = !MessageObject.isForwardedMessage(newMsg);
+                    TranslateController.reuseForwardedPostSummary(msgObj.messageOwner, newMsg);
+                }
                 if (MessageObject.isVoiceMessage(newMsg) || MessageObject.isRoundVideoMessage(newMsg)) {
                     if (inputPeer instanceof TLRPC.TL_inputPeerChannel && msgObj.getChannelId() != 0) {
                         newMsg.media_unread = msgObj.isContentUnread();
@@ -2857,6 +2861,10 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                                             if ((message.flags & 33554432) != 0) {
                                                 msgObj1.messageOwner.ttl_period = message.ttl_period;
                                                 msgObj1.messageOwner.flags |= 33554432;
+                                            }
+                                            if (TranslateController.isOutgoingChannelForward(newMsgObj1)) {
+                                                message.forwardedWithoutAuthor = !MessageObject.isForwardedMessage(message);
+                                                TranslateController.reuseForwardedPostSummary(newMsgObj1, message);
                                             }
                                             updateMediaPaths(msgObj1, message, message.id, null, true, message.params);
                                             int existFlags = msgObj1.getMediaExistanceFlags();

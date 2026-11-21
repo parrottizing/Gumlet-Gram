@@ -6399,6 +6399,10 @@ public class MessagesController extends BaseController implements NotificationCe
                 dialog.top_message = newMsgId;
                 getNotificationCenter().postNotificationName(NotificationCenter.dialogsNeedReload);
             }
+            TLRPC.Message sentMessage = (TLRPC.Message) args[2];
+            if (TranslateController.isOutgoingChannelForward(sentMessage)) {
+                getTranslateController().summarizeForwardedChannelPost(new MessageObject(currentAccount, sentMessage, false, false));
+            }
             if (DialogObject.isChatDialog(did)) {
                 TLRPC.ChatFull chatFull = fullChats.get(-did);
                 TLRPC.Chat chat = getChat(-did);
@@ -14403,6 +14407,10 @@ public class MessagesController extends BaseController implements NotificationCe
             if (messages != null) all.addAll(messages);
         }
         getTranslateController().registerChannelHistory(all);
+        Runnable publishPreviews = () -> {
+            publish.run();
+            for (MessageObject message : all) getTranslateController().summarizeForwardedChannelPost(message);
+        };
 
         ArrayList<ArrayList<MessageObject>> pending = new ArrayList<>();
         for (int i = 0; i < previews.size(); i++) {
@@ -14416,7 +14424,7 @@ public class MessagesController extends BaseController implements NotificationCe
             }
         }
         if (pending.isEmpty()) {
-            publish.run();
+            publishPreviews.run();
             return;
         }
 
@@ -14445,7 +14453,7 @@ public class MessagesController extends BaseController implements NotificationCe
                     }
                 }
                 if (--remaining[0] == 0) {
-                    publish.run();
+                    publishPreviews.run();
                     for (ArrayList<MessageObject> held : pending) {
                         Runnable reveal = () -> {
                             if (updateInterfaceWithMessages(held.get(0).getDialogId(), new ArrayList<>(held), 0)) {
@@ -22088,6 +22096,7 @@ public class MessagesController extends BaseController implements NotificationCe
             if (messages.isEmpty()) {
                 return false;
             }
+            for (MessageObject message : messages) getTranslateController().summarizeForwardedChannelPost(message);
         }
 
         boolean isEncryptedChat = DialogObject.isEncryptedDialog(dialogId);
